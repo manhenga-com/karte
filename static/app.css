@@ -76,6 +76,19 @@ body {
   transition: color 120ms ease, text-decoration-color 120ms ease;
 }
 
+.nav-form {
+  display: inline-flex;
+  margin: 0;
+}
+
+.nav-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
 .nav-link:hover,
 .nav-link.active {
   color: var(--brand);

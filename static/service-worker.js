@@ -1,6 +1,5 @@
-const CACHE_NAME = 'karte-routeros-management-v19';
+const CACHE_NAME = 'karte-routeros-management-v20';
 const STATIC_ASSETS = [
-  '/',
   '/static/app.css',
   '/static/vendor/bootstrap.min.css',
   '/static/mikrotik-symbol.svg',
@@ -28,5 +27,11 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') {
     return;
   }
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });

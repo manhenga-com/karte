@@ -62,6 +62,8 @@ def create_app() -> Flask:
         "routers_edit",
         "routers_use",
         "routers_delete",
+        "account_logout",
+        "account_upgrade",
     }
 
     @app.before_request
@@ -89,6 +91,14 @@ def create_app() -> Flask:
         if had_login:
             flash("Router login expired after 30 minutes. Please login again.", "warning")
         return redirect(url_for("login", next=request.full_path if request.query_string else request.path))
+
+    @app.after_request
+    def prevent_dynamic_page_cache(response):
+        if request.endpoint not in {"static", "manifest", "service_worker"}:
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
 
     @app.context_processor
     def inject_active_router():
@@ -172,10 +182,10 @@ def create_app() -> Flask:
 
         return render_template("account_register.html", name="", email="")
 
-    @app.route("/account/logout")
+    @app.route("/account/logout", methods=["GET", "POST"])
     def account_logout():
         clear_router_session()
-        session.pop("user_id", None)
+        session.clear()
         flash("Signed out of Karte.", "success")
         return redirect(url_for("account_login"))
 
@@ -727,7 +737,13 @@ def validate_startup_config() -> None:
 
     errors = []
     secret_key = os.environ.get("SECRET_KEY", "").strip()
-    if len(secret_key) < 32 or secret_key in {"change-this-to-a-long-random-secret", "make-this-a-long-random-secret"}:
+    placeholder_secret_keys = {
+        "change-this-to-a-long-random-secret",
+        "make-this-a-long-random-secret",
+        "a-long-random-secret",
+        "replace-with-a-long-random-secret-at-least-32-characters",
+    }
+    if len(secret_key) < 32 or secret_key in placeholder_secret_keys:
         errors.append("Set SECRET_KEY to a long random value.")
 
     if db_engine() != "mysql":

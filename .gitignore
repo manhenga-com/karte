@@ -8,7 +8,6 @@ storage/*.sqlite-*
 
 
 hotspot-login-page/
-requirements-vps.txt
 
 # Python cache
 __pycache__/
@@ -56,8 +55,6 @@ desktop.ini
 
 # MySQL dumps/backups
 *.sql
+!setup/mysql-setup.sql
 *.dump
 *.bak
-
-
-mysql-setup.sql
