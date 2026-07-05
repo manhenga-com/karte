@@ -57,3 +57,6 @@ desktop.ini
 *.sql
 *.dump
 *.bak
+
+
+mysql-setup.sql/
