@@ -7,6 +7,7 @@ import secrets
 import socket
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from contextlib import closing
@@ -14,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, g, has_request_context, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -38,6 +39,7 @@ TRIAL_DAYS = 30
 TRIAL_ROUTER_LIMIT = 1
 UPGRADE_ROUTER_LIMITS = [3, 10, 25, 100]
 SYNC_THREAD_STARTED = False
+MYSQL_POOL = None
 
 
 def create_app() -> Flask:
@@ -492,12 +494,26 @@ def create_app() -> Flask:
         selected_status = request.args.get("status", "all")
         if selected_status not in ["all", *VOUCHER_STATUSES]:
             selected_status = "all"
+        page = parse_positive_int(request.args.get("page"), 1)
+        per_page = voucher_page_size()
+        counts = voucher_status_counts(router["id"])
+        total = counts.get("all", 0) if selected_status == "all" else counts.get(selected_status, 0)
+        total_pages = max(1, (total + per_page - 1) // per_page)
+        page = min(page, total_pages)
         return render_template(
             "vouchers.html",
-            vouchers=list_vouchers(router["id"], selected_status),
-            counts=voucher_status_counts(router["id"]),
+            vouchers=list_vouchers(router["id"], selected_status, limit=per_page, offset=(page - 1) * per_page),
+            counts=counts,
             statuses=VOUCHER_STATUSES,
             selected_status=selected_status,
+            pagination={
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_prev": page > 1,
+                "has_next": page < total_pages,
+            },
         )
 
     @app.post("/vouchers/sync")
@@ -692,7 +708,14 @@ def create_app() -> Flask:
         if not router:
             return redirect(url_for("routers_add"))
 
-        vouchers_to_print = [get_voucher(voucher_id, router["id"])] if voucher_id else list_vouchers(router["id"])
+        if voucher_id:
+            vouchers_to_print = [get_voucher(voucher_id, router["id"])]
+        else:
+            print_limit = print_voucher_limit()
+            total = count_vouchers(router["id"])
+            vouchers_to_print = list_vouchers(router["id"], limit=print_limit)
+            if total > print_limit:
+                flash(f"Showing the latest {print_limit} vouchers for printing. Print smaller batches for best speed.", "warning")
         vouchers_to_print = [voucher for voucher in vouchers_to_print if voucher]
         return render_template("print.html", vouchers=vouchers_to_print)
 
@@ -770,27 +793,49 @@ def configure_http_settings(app: Flask) -> None:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 
+def request_cached(name: str, factory):
+    if not has_request_context():
+        return factory()
+    if not hasattr(g, name):
+        setattr(g, name, factory())
+    return getattr(g, name)
+
+
+def clear_request_cache(*names: str) -> None:
+    if not has_request_context():
+        return
+    for name in names:
+        if hasattr(g, name):
+            delattr(g, name)
+
+
 def router_session_active() -> bool:
-    if not current_user_id():
-        return False
-    if trial_has_expired():
+    def load_active_state() -> bool:
+        if not current_user_id():
+            return False
+        if trial_has_expired():
+            clear_router_session()
+            return False
+        router_session = get_router_session()
+        if not router_session:
+            return False
+        if get_router(int(router_session["router_id"])):
+            return True
         clear_router_session()
         return False
-    router_session = get_router_session()
-    if not router_session:
-        return False
-    if get_router(int(router_session["router_id"])):
-        return True
-    clear_router_session()
-    return False
+
+    return bool(request_cached("router_session_active", load_active_state))
 
 
 def session_minutes_left() -> int:
-    router_session = get_router_session()
-    if not router_session:
-        return 0
-    seconds_left = max(0, int(float(router_session["expires_at"]) - time.time()))
-    return max(1, (seconds_left + 59) // 60)
+    def load_minutes_left() -> int:
+        router_session = get_router_session()
+        if not router_session:
+            return 0
+        seconds_left = max(0, int(float(router_session["expires_at"]) - time.time()))
+        return max(1, (seconds_left + 59) // 60)
+
+    return int(request_cached("session_minutes_left", load_minutes_left))
 
 
 def start_router_session(router_id: int, router) -> None:
@@ -827,6 +872,7 @@ def start_router_session(router_id: int, router) -> None:
     session.permanent = True
     session["router_id"] = int(router_id)
     session["router_session_token"] = token
+    clear_request_cache("router_session", "router_session_active", "active_router", "session_minutes_left")
 
 
 def clear_router_session() -> None:
@@ -838,29 +884,33 @@ def clear_router_session() -> None:
 
     for key in ["router_id", "router_session_token"]:
         session.pop(key, None)
+    clear_request_cache("router_session", "router_session_active", "active_router", "session_minutes_left")
 
 
 def get_router_session() -> sqlite3.Row | None:
-    token = session.get("router_session_token")
-    user_id = current_user_id()
-    if not token or not user_id:
-        return None
-
-    with closing(get_db()) as db:
-        router_session = db.execute(
-            "SELECT * FROM router_sessions WHERE token = ? AND user_id = ?",
-            (token, user_id),
-        ).fetchone()
-
-        if not router_session:
+    def load_router_session():
+        token = session.get("router_session_token")
+        user_id = current_user_id()
+        if not token or not user_id:
             return None
 
-        if float(router_session["expires_at"]) <= time.time():
-            db.execute("DELETE FROM router_sessions WHERE token = ?", (token,))
-            db.commit()
-            return None
+        with closing(get_db()) as db:
+            router_session = db.execute(
+                "SELECT * FROM router_sessions WHERE token = ? AND user_id = ?",
+                (token, user_id),
+            ).fetchone()
 
-        return router_session
+            if not router_session:
+                return None
+
+            if float(router_session["expires_at"]) <= time.time():
+                db.execute("DELETE FROM router_sessions WHERE token = ?", (token,))
+                db.commit()
+                return None
+
+            return router_session
+
+    return request_cached("router_session", load_router_session)
 
 
 def safe_next_url(next_url: str | None) -> str | None:
@@ -876,14 +926,16 @@ def current_user_id() -> int | None:
 
 def current_user():
     user_id = current_user_id()
-    return get_app_user(user_id) if user_id else None
+    if not user_id:
+        return None
+    return request_cached("current_user", lambda: get_app_user(user_id))
 
 
 def current_trial_status() -> dict[str, object] | None:
     user = current_user()
     if not user:
         return None
-    return trial_status_for_user(user)
+    return request_cached("trial_status", lambda: trial_status_for_user(user))
 
 
 def trial_status_for_user(user) -> dict[str, object]:
@@ -943,6 +995,7 @@ def login_app_user(user) -> None:
     clear_router_session()
     session.permanent = True
     session["user_id"] = int(user["id"])
+    clear_request_cache("current_user", "trial_status")
 
 
 def validate_app_user(name: str, email: str, password: str) -> str | None:
@@ -1119,22 +1172,51 @@ def mysql_config() -> dict[str, object]:
     }
 
 
-def mysql_connection():
-    config = mysql_config()
+def mysql_pool_size() -> int:
+    raw = os.environ.get("MYSQL_POOL_SIZE", "10").strip()
     try:
-        return mysql_connector.connect(**config)
-    except mysql_connector.Error as exc:
-        if getattr(exc, "errno", None) != 1049:
-            raise
+        size = int(raw)
+    except ValueError:
+        size = 10
+    return max(1, min(size, 32))
 
-        database = str(config.pop("database"))
-        with closing(mysql_connector.connect(**config)) as conn:
-            cursor = conn.cursor()
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {mysql_identifier(database)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-            conn.commit()
 
-        config["database"] = database
-        return mysql_connector.connect(**config)
+def create_mysql_database_if_missing(config: dict[str, object]) -> None:
+    database = str(config.get("database") or "")
+    if not database:
+        return
+
+    bootstrap_config = dict(config)
+    bootstrap_config.pop("database", None)
+    with closing(mysql_connector.connect(**bootstrap_config)) as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {mysql_identifier(database)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        conn.commit()
+
+
+def mysql_connection():
+    global MYSQL_POOL
+    config = mysql_config()
+    if MYSQL_POOL is None:
+        try:
+            MYSQL_POOL = mysql_connector.pooling.MySQLConnectionPool(
+                pool_name=os.environ.get("MYSQL_POOL_NAME", "karte_pool"),
+                pool_size=mysql_pool_size(),
+                pool_reset_session=True,
+                **config,
+            )
+        except mysql_connector.Error as exc:
+            if getattr(exc, "errno", None) != 1049:
+                raise
+            create_mysql_database_if_missing(config)
+            MYSQL_POOL = mysql_connector.pooling.MySQLConnectionPool(
+                pool_name=os.environ.get("MYSQL_POOL_NAME", "karte_pool"),
+                pool_size=mysql_pool_size(),
+                pool_reset_session=True,
+                **config,
+            )
+
+    return MYSQL_POOL.get_connection()
 
 
 def mysql_identifier(name: str) -> str:
@@ -1238,9 +1320,16 @@ def init_db() -> None:
         migrate_voucher_details_schema(db)
         db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_router_id ON vouchers(router_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_router_created_id ON vouchers(router_id, created_at, id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_router_status_created_id ON vouchers(router_id, status, created_at, id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_router_username ON vouchers(router_id, username)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_router_status_id ON vouchers(router_id, status, id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_routers_owner_user_id ON routers(owner_user_id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_routers_owner_login ON routers(owner_user_id, router_ip, api_port, router_username, id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_routers_owner_name_id ON routers(owner_user_id, name, id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_router_sessions_user_id ON router_sessions(user_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_router_sessions_expires_at ON router_sessions(expires_at)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_router_sessions_user_expires ON router_sessions(user_id, expires_at)")
         db.commit()
 
 
@@ -1283,7 +1372,9 @@ def init_mysql_db(db) -> None:
             created_at VARCHAR(19) NOT NULL,
             updated_at VARCHAR(19) NOT NULL,
             INDEX idx_routers_owner_user_id (owner_user_id),
-            INDEX idx_routers_login (router_ip, api_port, router_username)
+            INDEX idx_routers_login (router_ip, api_port, router_username),
+            INDEX idx_routers_owner_login (owner_user_id, router_ip, api_port, router_username, id),
+            INDEX idx_routers_owner_name_id (owner_user_id, name, id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
     )
@@ -1313,6 +1404,10 @@ def init_mysql_db(db) -> None:
             updated_at VARCHAR(19) NOT NULL,
             INDEX idx_vouchers_router_id (router_id),
             INDEX idx_vouchers_status (status),
+            INDEX idx_vouchers_router_created_id (router_id, created_at, id),
+            INDEX idx_vouchers_router_status_created_id (router_id, status, created_at, id),
+            INDEX idx_vouchers_router_username (router_id, username),
+            INDEX idx_vouchers_router_status_id (router_id, status, id),
             CONSTRAINT fk_vouchers_router
                 FOREIGN KEY (router_id) REFERENCES routers(id)
                 ON DELETE CASCADE
@@ -1334,6 +1429,7 @@ def init_mysql_db(db) -> None:
             updated_at VARCHAR(19) NOT NULL,
             INDEX idx_router_sessions_user_id (user_id),
             INDEX idx_router_sessions_expires_at (expires_at),
+            INDEX idx_router_sessions_user_expires (user_id, expires_at),
             CONSTRAINT fk_router_sessions_router
                 FOREIGN KEY (router_id) REFERENCES routers(id)
                 ON DELETE CASCADE
@@ -1342,6 +1438,7 @@ def init_mysql_db(db) -> None:
     )
     migrate_mysql_saas_schema(db)
     migrate_mysql_voucher_details_schema(db)
+    ensure_mysql_indexes(db)
 
 
 def migrate_saas_schema(db: sqlite3.Connection) -> None:
@@ -1388,6 +1485,29 @@ def migrate_mysql_saas_schema(db) -> None:
     if "user_id" not in session_columns:
         db.execute("ALTER TABLE router_sessions ADD COLUMN user_id INT NULL")
         db.execute("CREATE INDEX idx_router_sessions_user_id ON router_sessions(user_id)")
+
+
+def ensure_mysql_indexes(db) -> None:
+    indexes = [
+        ("vouchers", "idx_vouchers_router_created_id", "router_id, created_at, id"),
+        ("vouchers", "idx_vouchers_router_status_created_id", "router_id, status, created_at, id"),
+        ("vouchers", "idx_vouchers_router_username", "router_id, username"),
+        ("vouchers", "idx_vouchers_router_status_id", "router_id, status, id"),
+        ("routers", "idx_routers_owner_login", "owner_user_id, router_ip, api_port, router_username, id"),
+        ("routers", "idx_routers_owner_name_id", "owner_user_id, name, id"),
+        ("router_sessions", "idx_router_sessions_user_expires", "user_id, expires_at"),
+    ]
+    for table, index_name, columns in indexes:
+        if not mysql_index_exists(db, table, index_name):
+            db.execute(f"CREATE INDEX {mysql_identifier(index_name)} ON {mysql_identifier(table)} ({columns})")
+
+
+def mysql_index_exists(db, table: str, index_name: str) -> bool:
+    rows = db.execute(
+        f"SHOW INDEX FROM {mysql_identifier(table)} WHERE Key_name = ?",
+        (index_name,),
+    ).fetchall()
+    return bool(rows)
 
 
 def backfill_trial_columns(db) -> None:
@@ -1715,15 +1835,18 @@ def first_router() -> sqlite3.Row | None:
 
 
 def get_active_router() -> sqlite3.Row | None:
-    router_session = get_router_session()
-    if router_session:
-        router = get_router(int(router_session["router_id"]))
-        if router:
-            session["router_id"] = int(router["id"])
-            return router
-        clear_router_session()
+    def load_active_router():
+        router_session = get_router_session()
+        if router_session:
+            router = get_router(int(router_session["router_id"]))
+            if router:
+                session["router_id"] = int(router["id"])
+                return router
+            clear_router_session()
 
-    return None
+        return None
+
+    return request_cached("active_router", load_active_router)
 
 
 def set_active_router(router_id: int) -> None:
@@ -1812,19 +1935,26 @@ def delete_router(router_id: int) -> None:
 
 
 VOUCHER_STATUSES = ["unused", "activated", "online", "used", "expired", "deleted", "disabled"]
+DEFAULT_VOUCHERS_PER_PAGE = 100
+MAX_VOUCHERS_PER_PAGE = 250
+DEFAULT_PRINT_VOUCHER_LIMIT = 200
+MAX_PRINT_VOUCHER_LIMIT = 500
 
 
-def list_vouchers(router_id: int, status: str = "all") -> list[sqlite3.Row]:
+def list_vouchers(router_id: int, status: str = "all", *, limit: int | None = None, offset: int = 0) -> list[sqlite3.Row]:
     with closing(get_db()) as db:
         if status in VOUCHER_STATUSES:
-            return db.execute(
-                "SELECT * FROM vouchers WHERE router_id = ? AND status = ? ORDER BY created_at DESC, id DESC",
-                (router_id, status),
-            ).fetchall()
-        return db.execute(
-            "SELECT * FROM vouchers WHERE router_id = ? ORDER BY created_at DESC, id DESC",
-            (router_id,),
-        ).fetchall()
+            sql = "SELECT * FROM vouchers WHERE router_id = ? AND status = ? ORDER BY created_at DESC, id DESC"
+            params: tuple = (router_id, status)
+        else:
+            sql = "SELECT * FROM vouchers WHERE router_id = ? ORDER BY created_at DESC, id DESC"
+            params = (router_id,)
+
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params = (*params, int(limit), max(0, int(offset)))
+
+        return db.execute(sql, params).fetchall()
 
 
 def get_voucher(voucher_id: int, router_id: int) -> sqlite3.Row | None:
@@ -1843,10 +1973,17 @@ def get_voucher_by_username(username: str, router_id: int) -> sqlite3.Row | None
         ).fetchone()
 
 
-def count_vouchers(router_id: int | None = None) -> int:
+def count_vouchers(router_id: int | None = None, status: str = "all") -> int:
     with closing(get_db()) as db:
         if router_id is None:
             return int(db.execute("SELECT COUNT(*) FROM vouchers").fetchone()[0])
+        if status in VOUCHER_STATUSES:
+            return int(
+                db.execute(
+                    "SELECT COUNT(*) FROM vouchers WHERE router_id = ? AND status = ?",
+                    (router_id, status),
+                ).fetchone()[0]
+            )
         return int(db.execute("SELECT COUNT(*) FROM vouchers WHERE router_id = ?", (router_id,)).fetchone()[0])
 
 
@@ -2122,10 +2259,19 @@ def start_background_sync(app: Flask) -> None:
         return
     if os.environ.get("ENABLE_BACKGROUND_SYNC", "1").strip().lower() in ["0", "false", "no", "off"]:
         return
+    if running_under_gunicorn() and not env_flag("ENABLE_BACKGROUND_SYNC_IN_WEB", False):
+        return
 
     SYNC_THREAD_STARTED = True
     thread = threading.Thread(target=background_sync_loop, args=(app,), daemon=True)
     thread.start()
+
+
+def running_under_gunicorn() -> bool:
+    server_software = os.environ.get("SERVER_SOFTWARE", "")
+    gunicorn_args = os.environ.get("GUNICORN_CMD_ARGS", "")
+    executable = Path(sys.argv[0]).name
+    return "gunicorn" in f"{server_software} {gunicorn_args} {executable}".lower()
 
 
 def background_sync_loop(app: Flask) -> None:
@@ -2319,6 +2465,18 @@ def parse_positive_int(value, default: int) -> int:
     except ValueError:
         return default
     return parsed if parsed > 0 else default
+
+
+def bounded_positive_int(value, default: int, maximum: int) -> int:
+    return min(parse_positive_int(value, default), maximum)
+
+
+def voucher_page_size() -> int:
+    return bounded_positive_int(request.args.get("per_page"), DEFAULT_VOUCHERS_PER_PAGE, MAX_VOUCHERS_PER_PAGE)
+
+
+def print_voucher_limit() -> int:
+    return bounded_positive_int(request.args.get("limit"), DEFAULT_PRINT_VOUCHER_LIMIT, MAX_PRINT_VOUCHER_LIMIT)
 
 
 def format_bytes(value: int | None) -> str:

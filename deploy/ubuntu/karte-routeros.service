@@ -8,10 +8,9 @@ User=karte
 Group=www-data
 WorkingDirectory=/opt/karte-routeros
 EnvironmentFile=/opt/karte-routeros/.env
-ExecStart=/opt/karte-routeros/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8008 --access-logfile - --error-logfile - wsgi:app
+ExecStart=/opt/karte-routeros/venv/bin/gunicorn "wsgi:app" --bind 127.0.0.1:8008 --worker-class gthread --workers 2 --threads 8 --timeout 90 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --access-logfile - --error-logfile -
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-

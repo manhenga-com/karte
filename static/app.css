@@ -781,6 +781,38 @@ body {
   font-size: 1.35rem;
 }
 
+.pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.pagination-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.pagination-links strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.pagination-disabled {
+  color: #94a3b8;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .metric-card {
   min-height: 76px;
 }
