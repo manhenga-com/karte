@@ -1,3 +1,0 @@
--r requirements.txt
-gunicorn>=22,<24
-
