@@ -8,3 +8,4 @@ storage/*.sqlite-*
 
 
 hotspot-login-page/
+requirements-vps.txt
