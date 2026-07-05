@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wireless Telegraph &amp; Signal Office</title>
+<style>
+  :root {
+    --paper: #ffffff;
+    --paper-dark: #f7f7f5;
+    --ink: #1a1a1a;
+    --ink-soft: #555555;
+    --line: #1a1a1a;
+    --danger: #8a1f11;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: max(22px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+             max(22px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+    color: var(--ink);
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(circle at 15% 20%, rgba(0,0,0,0.035) 0, transparent 45%),
+      radial-gradient(circle at 85% 80%, rgba(0,0,0,0.04) 0, transparent 50%);
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  .ticket {
+    position: relative;
+    width: min(400px, 100%);
+    background: var(--paper-dark);
+    border: 1px solid var(--line);
+    box-shadow:
+      0 0 0 4px var(--paper),
+      0 0 0 5px var(--line),
+      0 14px 34px rgba(0,0,0,0.18);
+    padding: 34px 30px 30px;
+  }
+
+  .corner-tl,
+  .corner-tr,
+  .corner-bl,
+  .corner-br {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--ink);
+    pointer-events: none;
+  }
+
+  .corner-tl { top: -8px; left: -8px; border-right: 0; border-bottom: 0; }
+  .corner-tr { top: -8px; right: -8px; border-left: 0; border-bottom: 0; }
+  .corner-bl { bottom: -8px; left: -8px; border-right: 0; border-top: 0; }
+  .corner-br { bottom: -8px; right: -8px; border-left: 0; border-top: 0; }
+
+  .eyebrow {
+    margin-bottom: 18px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 6px 0;
+    color: var(--ink-soft);
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin-bottom: 4px;
+    color: var(--ink);
+    font-family: "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: clamp(25px, 8vw, 30px);
+    font-weight: 400;
+    letter-spacing: 1px;
+    line-height: 1.1;
+    text-align: center;
+  }
+
+  .subhead {
+    margin-bottom: 26px;
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.4;
+    text-align: center;
+  }
+
+  .routeros-directive {
+    display: none;
+  }
+
+  .error-box {
+    margin-bottom: 16px;
+    border: 1px solid var(--ink);
+    background: #ffffff;
+    color: var(--danger);
+    font-size: 12.5px;
+    letter-spacing: 0.3px;
+    line-height: 1.4;
+    padding: 9px 12px;
+    text-align: center;
+  }
+
+  .field {
+    margin-bottom: 22px;
+  }
+
+  .field label {
+    display: block;
+    margin-bottom: 12px;
+    color: var(--ink-soft);
+    font-size: 11px;
+    letter-spacing: 2px;
+    line-height: 1.3;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .code-input {
+    width: 100%;
+    min-height: 52px;
+    border: 1.5px dashed var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Courier New", Courier, monospace;
+    font-size: clamp(17px, 5.4vw, 22px);
+    letter-spacing: clamp(2px, 1.8vw, 8px);
+    line-height: 1.2;
+    outline: 0;
+    padding: 14px 10px;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .code-input::placeholder {
+    color: #9b9b9b;
+    font-size: clamp(12px, 4vw, 15px);
+    letter-spacing: 0.22em;
+  }
+
+  .code-input:focus {
+    border-style: solid;
+  }
+
+  .code-input:focus-visible,
+  .btn:focus-visible,
+  .contact a:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  .btn {
+    width: 100%;
+    min-height: 48px;
+    margin-top: 20px;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    cursor: pointer;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 13px;
+    letter-spacing: 2px;
+    padding: 13px 12px;
+    text-transform: uppercase;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  @media (hover: hover) {
+    .btn:hover {
+      background: var(--paper);
+      color: var(--ink);
+    }
+  }
+
+  .stamp {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    width: 58px;
+    height: 58px;
+    border: 2px dashed var(--ink);
+    border-radius: 50%;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    letter-spacing: 1px;
+    line-height: 1.3;
+    opacity: 0.8;
+    text-align: center;
+    text-transform: uppercase;
+    transform: rotate(-12deg);
+    pointer-events: none;
+  }
+
+  .meta {
+    margin-top: 22px;
+    color: var(--ink-soft);
+    font-size: 10.5px;
+    letter-spacing: 0.5px;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .contact {
+    margin-top: 18px;
+    border-top: 1px dashed var(--line);
+    color: var(--ink-soft);
+    font-size: 11.5px;
+    line-height: 1.9;
+    padding-top: 14px;
+    text-align: center;
+  }
+
+  .contact-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ink-soft);
+    font-size: 9.5px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .contact a {
+    min-height: 30px;
+    color: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    border-bottom: 1px solid var(--ink);
+    padding: 1px 1px 0;
+    text-decoration: none;
+  }
+
+  .contact a:hover {
+    border-color: var(--ink-soft);
+    color: var(--ink-soft);
+  }
+
+  .contact .dot {
+    margin: 0 2px;
+    color: var(--ink-soft);
+  }
+
+  .footer-note {
+    width: min(400px, 100%);
+    color: var(--ink-soft);
+    font-size: 10px;
+    letter-spacing: 2px;
+    line-height: 1.5;
+    padding: 0 8px;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 380px) {
+    body {
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+    }
+
+    .ticket {
+      padding: 26px 18px 22px;
+    }
+
+    .corner-tl,
+    .corner-tr,
+    .corner-bl,
+    .corner-br {
+      width: 16px;
+      height: 16px;
+    }
+
+    .eyebrow {
+      margin-bottom: 14px;
+      font-size: 9.5px;
+      letter-spacing: 2px;
+    }
+
+    .subhead {
+      margin-bottom: 20px;
+      font-size: 12px;
+    }
+
+    .stamp {
+      top: 14px;
+      right: 14px;
+      width: 46px;
+      height: 46px;
+      font-size: 7.5px;
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .code-input {
+      padding-left: 8px;
+      padding-right: 8px;
+    }
+
+    .meta {
+      font-size: 10px;
+    }
+
+    .contact {
+      font-size: 11px;
+    }
+
+    .contact .dot {
+      display: none;
+    }
+
+    .contact a {
+      margin: 2px 6px;
+    }
+  }
+
+  @media (max-width: 340px) {
+    .stamp {
+      display: none;
+    }
+
+    .ticket {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+  }
+
+  @media (max-height: 480px) {
+    body {
+      align-items: center;
+      justify-content: flex-start;
+      padding-top: max(16px, env(safe-area-inset-top));
+    }
+
+    .stamp {
+      display: none;
+    }
+
+    .eyebrow {
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin-bottom: 2px;
+      font-size: 22px;
+    }
+
+    .subhead {
+      margin-bottom: 14px;
+    }
+
+    .field {
+      margin-bottom: 14px;
+    }
+
+    .meta {
+      margin-top: 12px;
+    }
+  }
+</style>
+</head>
+<body>
+  <main class="ticket" aria-label="Hotspot voucher login">
+    <span class="corner-tl"></span>
+    <span class="corner-tr"></span>
+    <span class="corner-bl"></span>
+    <span class="corner-br"></span>
+
+    <div class="stamp">Single<br>Passage</div>
+
+    <div class="eyebrow">Est. Wireless Signal Office</div>
+    <h1>Admit One</h1>
+    <p class="subhead">&mdash; redeem your voucher below &mdash;</p>
+
+    <span class="routeros-directive">$(if error)</span>
+    <div class="error-box" data-routeros-error aria-live="polite">$(error)</div>
+    <span class="routeros-directive">$(endif)</span>
+
+    <form name="login" action="$(link-login-only)" method="post" onsubmit="return prepareLogin();">
+      <input type="hidden" name="dst" value="$(link-orig)">
+      <input type="hidden" name="popup" value="true">
+      <input type="hidden" name="password" id="password" value="">
+
+      <div class="field">
+        <label for="code">Voucher Code</label>
+        <input
+          type="text"
+          name="username"
+          id="code"
+          class="code-input"
+          placeholder="XXXX-XXXX"
+          autocomplete="one-time-code"
+          autocapitalize="characters"
+          autocorrect="off"
+          spellcheck="false"
+          inputmode="text"
+          enterkeyhint="go"
+          aria-describedby="voucher-help"
+          required
+          autofocus
+        >
+      </div>
+
+      <button type="submit" class="btn">Redeem &amp; Connect</button>
+    </form>
+
+    <div class="meta" id="voucher-help">
+      One code, one passage &middot; <span data-preview="10.5.50.23">$(ip)</span> &middot; <span data-preview="AA:BB:CC:DD:EE:FF">$(mac)</span><br>
+      Present code is void once redeemed.
+    </div>
+
+    <div class="contact">
+      <span class="contact-label">Need Assistance?</span>
+      <a href="tel:+263771234567">+263 77 123 4567</a>
+      <span class="dot">&middot;</span>
+      <a href="https://wa.me/263771234567" target="_blank" rel="noopener">WhatsApp</a>
+      <span class="dot">&middot;</span>
+      <a href="mailto:support@example.com">support@example.com</a>
+    </div>
+  </main>
+
+  <div class="footer-note">&mdash; MikroTik Hotspot &mdash;</div>
+
+  <script>
+    function prepareLogin() {
+      var code = document.getElementById('code');
+      var password = document.getElementById('password');
+      code.value = code.value.replace(/\s+/g, '').toUpperCase();
+      password.value = code.value;
+      return code.value.length > 0;
+    }
+
+    (function () {
+      var code = document.getElementById('code');
+      var errorBox = document.querySelector('[data-routeros-error]');
+
+      if (code) {
+        code.addEventListener('input', function () {
+          var current = code.value;
+          var cleaned = current.toUpperCase();
+          if (current !== cleaned) {
+            code.value = cleaned;
+          }
+        });
+      }
+
+      if (errorBox && errorBox.textContent.trim() === '$(error)') {
+        errorBox.hidden = true;
+      }
+
+      document.querySelectorAll('[data-preview]').forEach(function (item) {
+        if (item.textContent.trim().indexOf('$(') === 0) {
+          item.textContent = item.getAttribute('data-preview');
+        }
+      });
+    }());
+  </script>
+</body>
+</html>

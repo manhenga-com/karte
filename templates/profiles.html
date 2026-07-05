@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Hotspot Profiles - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>Hotspot Profiles</h1>
+</section>
+
+<form method="post" class="simple-form">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label" for="name">Profile name</label>
+            <input class="form-control form-control-lg" id="name" name="name" value="{{ profile.name }}" placeholder="1hour" required>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="rate_limit">Rate limit</label>
+            <input class="form-control form-control-lg" id="rate_limit" name="rate_limit" value="{{ profile.rate_limit }}" placeholder="5M/10M">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="shared_users">Shared users</label>
+            <input class="form-control form-control-lg" id="shared_users" name="shared_users" value="{{ profile.shared_users or '1' }}" inputmode="numeric">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="session_timeout">Session timeout</label>
+            <input class="form-control form-control-lg" id="session_timeout" name="session_timeout" value="{{ profile.session_timeout }}" placeholder="1h">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="idle_timeout">Idle timeout</label>
+            <input class="form-control form-control-lg" id="idle_timeout" name="idle_timeout" value="{{ profile.idle_timeout }}" placeholder="5m">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn btn-primary btn-lg" type="submit">Create Profile</button>
+    </div>
+</form>
+
+<section class="page-heading with-action profiles-heading">
+    <h1>Router Profiles</h1>
+</section>
+
+{% if not profiles %}
+    <div class="empty-state">
+        <h2>No profiles loaded</h2>
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table align-middle voucher-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Rate limit</th>
+                    <th>Shared users</th>
+                    <th>Session timeout</th>
+                    <th>Idle timeout</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in profiles %}
+                    <tr>
+                        <td class="fw-semibold">{{ item.name }}</td>
+                        <td>{{ item.get('rate-limit', '') }}</td>
+                        <td>{{ item.get('shared-users', '') }}</td>
+                        <td>{{ item.get('session-timeout', '') }}</td>
+                        <td>{{ item.get('idle-timeout', '') }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

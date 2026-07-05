@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Upgrade - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>Upgrade</h1>
+</section>
+
+<section class="upgrade-panel">
+    <div class="upgrade-summary">
+        <span>Current plan</span>
+        <strong>{{ trial_status.plan|title if trial_status else 'Trial' }}</strong>
+        <small>{{ trial_status.router_count if trial_status else 0 }}/{{ trial_status.router_limit if trial_status else 1 }} routers used</small>
+    </div>
+
+    <div class="upgrade-grid">
+        {% for limit in options %}
+            <form method="post" class="upgrade-option">
+                <input type="hidden" name="router_limit" value="{{ limit }}">
+                <span>{{ limit }}</span>
+                <strong>{{ 'Router' if limit == 1 else 'Routers' }}</strong>
+                <button class="btn btn-primary" type="submit">Upgrade</button>
+            </form>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

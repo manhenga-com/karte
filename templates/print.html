@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Print Vouchers - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+{% set time_labels = {'30m': '30 Minutes', '1h': '1 Hour', '2h': '2 Hours', '1d': '1 Day', '1w': 'Weekly', '30d': 'Monthly', '0s': 'Lifetime'} %}
+{% set data_labels = {'': 'Unlimited', '524288000': '500 MB', '1073741824': '1 GB', '2147483648': '2 GB', '5368709120': '5 GB'} %}
+<section class="page-heading with-action no-print">
+    <h1>Print Vouchers</h1>
+    <button class="btn btn-primary" type="button" onclick="window.print()">Print</button>
+</section>
+
+{% if not vouchers %}
+    <div class="empty-state no-print">
+        <h2>No vouchers to print</h2>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('create_voucher') }}">Create Voucher</a>
+    </div>
+{% else %}
+    <section class="print-grid">
+        {% for voucher in vouchers %}
+            <article class="voucher-ticket">
+                <div class="ticket-top">
+                    <img src="{{ url_for('static', filename='icon.svg') }}" alt="" width="34" height="34">
+                    <strong>Hotspot Voucher</strong>
+                </div>
+                <dl>
+                    <div>
+                        <dt>Username</dt>
+                        <dd>{{ voucher.username }}</dd>
+                    </div>
+                    <div>
+                        <dt>Password</dt>
+                        <dd>{{ voucher.password }}</dd>
+                    </div>
+                    <div>
+                        <dt>Profile</dt>
+                        <dd>{{ voucher.profile }}</dd>
+                    </div>
+                    <div>
+                        <dt>Time limit</dt>
+                        <dd>{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</dd>
+                    </div>
+                    <div>
+                        <dt>Data limit</dt>
+                        <dd>{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</dd>
+                    </div>
+                    <div>
+                        <dt>Users</dt>
+                        <dd>{{ voucher.shared_users or '1' }}</dd>
+                    </div>
+                    <div>
+                        <dt>Expiry</dt>
+                        <dd>{{ voucher.expiry_date or 'Manual' }}</dd>
+                    </div>
+                    {% if voucher.comment %}
+                        <div>
+                            <dt>Notes</dt>
+                            <dd>{{ voucher.comment }}</dd>
+                        </div>
+                    {% endif %}
+                </dl>
+            </article>
+        {% endfor %}
+    </section>
+{% endif %}
+{% endblock %}

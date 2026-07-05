@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if mode == 'edit' else 'Create' }} Voucher - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+{% set time_options = [
+    ('30m', '30 Minutes'),
+    ('1h', '1 Hour'),
+    ('2h', '2 Hours'),
+    ('1d', '1 Day'),
+    ('1w', 'Weekly'),
+    ('30d', 'Monthly'),
+    ('0s', 'Lifetime')
+] %}
+{% set data_options = [
+    ('', 'Unlimited'),
+    ('524288000', '500 MB'),
+    ('1073741824', '1 GB'),
+    ('2147483648', '2 GB'),
+    ('5368709120', '5 GB')
+] %}
+{% set user_options = ['1', '2', '3', '5'] %}
+{% set status_options = ['unused', 'activated', 'online', 'used', 'expired', 'deleted', 'disabled'] %}
+{% set known_time_values = ['30m', '1h', '2h', '1d', '1w', '30d', '0s'] %}
+{% set known_data_values = ['', '524288000', '1073741824', '2147483648', '5368709120'] %}
+{% set selected_time = voucher.time_limit or '1h' %}
+{% set selected_profile = voucher.profile or 'default' %}
+{% set selected_data = voucher.data_limit or '' %}
+{% set selected_users = voucher.shared_users or '1' %}
+{% set selected_status = voucher.status or 'unused' %}
+<section class="page-heading">
+    <h1>{{ 'Edit' if mode == 'edit' else 'Create' }} Voucher</h1>
+</section>
+
+<form method="post" class="simple-form">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label" for="username">Username</label>
+            <input class="form-control form-control-lg" id="username" name="username" value="{{ voucher.username }}" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="password">Password</label>
+            <input class="form-control form-control-lg" id="password" name="password" value="{{ voucher.password }}" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="profile">Profile</label>
+            <select class="form-control form-control-lg" id="profile" name="profile" required>
+                {% if selected_profile not in profile_names %}
+                    <option value="{{ selected_profile }}" selected>{{ selected_profile }}</option>
+                {% endif %}
+                {% for profile_name in profile_names %}
+                    <option value="{{ profile_name }}" {% if selected_profile == profile_name %}selected{% endif %}>{{ profile_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="time_limit">Time limit</label>
+            <select class="form-control form-control-lg" id="time_limit" name="time_limit" required>
+                {% if selected_time not in known_time_values %}
+                    <option value="{{ selected_time }}" selected>{{ selected_time }}</option>
+                {% endif %}
+                {% for value, label in time_options %}
+                    <option value="{{ value }}" {% if selected_time == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="data_limit">Data limit</label>
+            <select class="form-control form-control-lg" id="data_limit" name="data_limit">
+                {% if selected_data not in known_data_values %}
+                    <option value="{{ selected_data }}" selected>{{ selected_data }}</option>
+                {% endif %}
+                {% for value, label in data_options %}
+                    <option value="{{ value }}" {% if selected_data == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="shared_users">Users allowed</label>
+            <select class="form-control form-control-lg" id="shared_users" name="shared_users">
+                {% if selected_users not in user_options %}
+                    <option value="{{ selected_users }}" selected>{{ selected_users }}</option>
+                {% endif %}
+                {% for value in user_options %}
+                    <option value="{{ value }}" {% if selected_users == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="expiry_date">Expiry date</label>
+            <input class="form-control form-control-lg" id="expiry_date" name="expiry_date" type="datetime-local" value="{{ voucher.expiry_date }}">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="status">Status</label>
+            <select class="form-control form-control-lg" id="status" name="status" required>
+                {% for value in status_options %}
+                    <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ value|title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label" for="comment">Comment / notes</label>
+            <textarea class="form-control form-control-lg" id="comment" name="comment" rows="3">{{ voucher.comment }}</textarea>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn btn-primary btn-lg" type="submit">{{ 'Save Changes' if mode == 'edit' else 'Create Voucher' }}</button>
+        <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('vouchers') }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

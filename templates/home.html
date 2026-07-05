@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="home-header">
+    <p class="eyebrow">RouterOS Management</p>
+    <h1 class="app-title-light">Karte RouterOS Management System</h1>
+    <p class="text-muted mb-0">
+        {% if active_router %}
+            {{ voucher_count }} saved voucher{{ '' if voucher_count == 1 else 's' }} on {{ active_router.name }}
+        {% else %}
+            Login to a router to start managing RouterOS
+        {% endif %}
+    </p>
+</section>
+
+<section class="home-grid">
+    <a class="home-tile tile-router" href="{{ url_for('routers') }}">
+        <span class="tile-icon">R</span>
+        <span>Routers</span>
+    </a>
+    <a class="home-tile tile-profiles" href="{{ url_for('hotspot_profiles') }}">
+        <span class="tile-icon">H</span>
+        <span>Hotspot Profiles</span>
+    </a>
+    <a class="home-tile tile-create" href="{{ url_for('create_voucher') }}">
+        <span class="tile-icon">+</span>
+        <span>Create Voucher</span>
+    </a>
+    <a class="home-tile tile-view" href="{{ url_for('vouchers') }}">
+        <span class="tile-icon">#</span>
+        <span>View Vouchers</span>
+    </a>
+    <a class="home-tile tile-active" href="{{ url_for('active_hotspot_users') }}">
+        <span class="tile-icon">O</span>
+        <span>Connected Users</span>
+    </a>
+    <a class="home-tile tile-print" href="{{ url_for('print_vouchers') }}">
+        <span class="tile-icon">P</span>
+        <span>Print Vouchers</span>
+    </a>
+    <a class="home-tile tile-script" href="{{ url_for('router_setup_script') }}">
+        <span class="tile-icon">S</span>
+        <span>Setup Script</span>
+    </a>
+    <a class="home-tile tile-settings" href="{{ url_for('settings') }}">
+        <span class="tile-icon">*</span>
+        <span>Router Settings</span>
+    </a>
+</section>
+{% endblock %}

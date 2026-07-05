@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}View Vouchers - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+{% set time_labels = {'30m': '30 Minutes', '1h': '1 Hour', '2h': '2 Hours', '1d': '1 Day', '1w': 'Weekly', '30d': 'Monthly', '0s': 'Lifetime'} %}
+{% set data_labels = {'': 'Unlimited', '524288000': '500 MB', '1073741824': '1 GB', '2147483648': '2 GB', '5368709120': '5 GB'} %}
+<section class="page-heading with-action">
+    <h1>View Vouchers</h1>
+    <div class="heading-actions">
+        <form method="post" action="{{ url_for('sync_vouchers') }}">
+            <button class="btn btn-outline-secondary" type="submit">Refresh Status</button>
+        </form>
+        <a class="btn btn-primary" href="{{ url_for('create_voucher') }}">Create Voucher</a>
+    </div>
+</section>
+
+<section class="status-grid">
+    <a class="status-card {% if selected_status == 'all' %}active{% endif %}" href="{{ url_for('vouchers') }}">
+        <span>All</span>
+        <strong>{{ counts.get('all', 0) }}</strong>
+    </a>
+    {% for status in statuses %}
+        <a class="status-card {% if selected_status == status %}active{% endif %}" href="{{ url_for('vouchers', status=status) }}">
+            <span>{{ status|title }}</span>
+            <strong>{{ counts.get(status, 0) }}</strong>
+        </a>
+    {% endfor %}
+</section>
+
+{% if not vouchers %}
+    <div class="empty-state">
+        <h2>No vouchers found</h2>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('create_voucher') }}">Create Voucher</a>
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table align-middle voucher-table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Password</th>
+                    <th>Profile</th>
+                    <th>Time</th>
+                    <th>Data</th>
+                    <th>Users</th>
+                    <th>Online</th>
+                    <th>Status</th>
+                    <th>Activated</th>
+                    <th>Time Used</th>
+                    <th>Time Left</th>
+                    <th>Data Used</th>
+                    <th>Data Left</th>
+                    <th>Expiry</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for voucher in vouchers %}
+                    <tr>
+                        <td class="fw-semibold">{{ voucher.username }}</td>
+                        <td><code>{{ voucher.password }}</code></td>
+                        <td>{{ voucher.profile }}</td>
+                        <td>{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</td>
+                        <td>{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</td>
+                        <td>{{ voucher.shared_users or '1' }}</td>
+                        <td>{{ voucher.online_users or 0 }}</td>
+                        <td><span class="status-pill status-{{ voucher.status or 'unused' }}">{{ (voucher.status or 'unused')|title }}</span></td>
+                        <td>{{ voucher.activated_at or '-' }}</td>
+                        <td>{{ voucher.uptime_used or '-' }}</td>
+                        <td>{{ voucher|time_remaining }}</td>
+                        <td>{{ voucher.data_used|data_size if voucher.data_used else '-' }}</td>
+                        <td>{{ voucher|data_remaining }}</td>
+                        <td>{{ voucher.expiry_date or '-' }}</td>
+                        <td class="text-end actions-cell">
+                            <div class="action-group">
+                                <a class="action-link action-neutral" href="{{ url_for('print_vouchers', voucher_id=voucher.id) }}">Print</a>
+                                <a class="action-link action-neutral" href="{{ url_for('voucher_details', voucher_id=voucher.id) }}">Details</a>
+                                <a class="action-link action-edit" href="{{ url_for('edit_voucher', voucher_id=voucher.id) }}">Edit</a>
+                                <form method="post" class="inline-form" action="{{ url_for('disable_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Disable this voucher on the MikroTik router?');">
+                                    <button class="action-link action-neutral" type="submit">Disable</button>
+                                </form>
+                                <form method="post" class="inline-form" action="{{ url_for('renew_voucher', voucher_id=voucher.id) }}">
+                                    <button class="action-link action-use" type="submit">Renew</button>
+                                </form>
+                                <form method="post" class="inline-form" action="{{ url_for('delete_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Delete this voucher from the MikroTik router and keep local history?');">
+                                    <button class="action-link action-danger" type="submit">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

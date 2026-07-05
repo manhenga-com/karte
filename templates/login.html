@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Router Login - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>Router Login</h1>
+    <p class="text-muted mb-0">Login like WinBox. This browser session lasts 30 minutes or until you logout.</p>
+</section>
+
+<form method="post" class="simple-form login-form">
+    <input type="hidden" name="next" value="{{ next_url or request.args.get('next', '') }}">
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label" for="name">Router name</label>
+            <input class="form-control form-control-lg" id="name" name="name" value="{{ router.name }}" placeholder="Home Router" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="router_ip">Connect to</label>
+            <input class="form-control form-control-lg" id="router_ip" name="router_ip" value="{{ router.router_ip }}" placeholder="192.168.88.1" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="api_port">API port</label>
+            <input class="form-control form-control-lg" id="api_port" name="api_port" value="{{ router.api_port or '8728' }}" inputmode="numeric" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="router_username">Login</label>
+            <input class="form-control form-control-lg" id="router_username" name="router_username" value="{{ router.router_username }}" autocomplete="username" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="router_password">Password</label>
+            <input class="form-control form-control-lg" id="router_password" name="router_password" type="password" value="{{ router.router_password }}" autocomplete="current-password">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn btn-primary btn-lg" type="submit">Connect</button>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Voucher Details - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+{% set time_labels = {'30m': '30 Minutes', '1h': '1 Hour', '2h': '2 Hours', '1d': '1 Day', '1w': 'Weekly', '30d': 'Monthly', '0s': 'Lifetime'} %}
+{% set data_labels = {'': 'Unlimited', '524288000': '500 MB', '1073741824': '1 GB', '2147483648': '2 GB', '5368709120': '5 GB'} %}
+<section class="page-heading with-action">
+    <h1>Voucher Details</h1>
+    <div class="heading-actions">
+        <a class="btn btn-outline-secondary" href="{{ url_for('print_vouchers', voucher_id=voucher.id) }}">Print</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('edit_voucher', voucher_id=voucher.id) }}">Edit</a>
+        <a class="btn btn-primary" href="{{ url_for('vouchers') }}">Back</a>
+    </div>
+</section>
+
+<section class="detail-grid">
+        <div class="detail-item">
+            <span>Voucher code</span>
+            <strong>{{ voucher.username }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Password</span>
+            <strong>{{ voucher.password }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Profile</span>
+            <strong>{{ voucher.profile }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Status</span>
+            <strong><span class="status-pill status-{{ voucher.status or 'unused' }}">{{ (voucher.status or 'unused')|title }}</span></strong>
+        </div>
+        <div class="detail-item">
+            <span>Time limit</span>
+            <strong>{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Time used</span>
+            <strong>{{ voucher.uptime_used or '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Time remaining</span>
+            <strong>{{ voucher|time_remaining }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Data limit</span>
+            <strong>{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Data used</span>
+            <strong>{{ voucher.data_used|data_size if voucher.data_used else '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Data remaining</span>
+            <strong>{{ voucher|data_remaining }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Users allowed</span>
+            <strong>{{ voucher.shared_users or '1' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Users online</span>
+            <strong>{{ voucher.online_users or 0 }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Activated at</span>
+            <strong>{{ voucher.activated_at or '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>First login MAC</span>
+            <strong>{{ voucher.first_login_mac or '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>First login IP</span>
+            <strong>{{ voucher.first_login_ip or '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Device name</span>
+            <strong>{{ voucher.device_name or '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Expiry date</span>
+            <strong>{{ voucher.expiry_date or '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>RouterOS user id</span>
+            <strong>{{ voucher.routeros_id or '-' }}</strong>
+        </div>
+</section>
+
+{% if voucher.comment %}
+    <section class="script-panel">
+        <h2 class="h5">Notes</h2>
+        <p class="mb-0">{{ voucher.comment }}</p>
+    </section>
+{% endif %}
+
+<div class="form-actions">
+    <form method="post" action="{{ url_for('disable_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Disable this voucher on the MikroTik router?');">
+        <button class="btn btn-outline-secondary" type="submit">Disable</button>
+    </form>
+    <form method="post" action="{{ url_for('renew_voucher', voucher_id=voucher.id) }}">
+        <button class="btn btn-outline-primary" type="submit">Renew</button>
+    </form>
+    <form method="post" action="{{ url_for('delete_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Delete this voucher from the MikroTik router and keep local history?');">
+        <button class="btn btn-outline-danger" type="submit">Delete</button>
+    </form>
+</div>
+{% endblock %}

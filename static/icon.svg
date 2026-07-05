@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Hotspot voucher icon">
+  <rect width="512" height="512" rx="96" fill="#0f766e"/>
+  <path d="M104 178c0-22 18-40 40-40h224c22 0 40 18 40 40v38c-22 0-40 18-40 40s18 40 40 40v38c0 22-18 40-40 40H144c-22 0-40-18-40-40v-38c22 0 40-18 40-40s-18-40-40-40v-38z" fill="#ffffff"/>
+  <path d="M206 244a70 70 0 0 1 100 0" fill="none" stroke="#0f766e" stroke-width="24" stroke-linecap="round"/>
+  <path d="M238 282a26 26 0 0 1 36 0" fill="none" stroke="#0f766e" stroke-width="24" stroke-linecap="round"/>
+  <circle cx="256" cy="318" r="16" fill="#0f766e"/>
+</svg>

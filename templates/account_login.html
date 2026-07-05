@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Account Login - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="auth-layout">
+    <aside class="auth-hero">
+        <img class="auth-logo" src="{{ url_for('static', filename='mikrotik-logo.svg') }}" alt="MikroTik">
+        <p class="auth-product">Karte RouterOS</p>
+        <h1>Management System</h1>
+        <div class="auth-tiles" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    </aside>
+
+    <section class="auth-card" aria-labelledby="account-login-title">
+        <p class="auth-kicker">Account</p>
+        <h1 id="account-login-title">Sign in</h1>
+
+        <form method="post" class="auth-form">
+            <input type="hidden" name="next" value="{{ next_url or request.args.get('next', '') }}">
+
+            <div class="auth-field">
+                <label class="form-label" for="email">Email</label>
+                <input class="form-control" id="email" name="email" type="email" value="{{ email }}" autocomplete="username" required autofocus>
+            </div>
+            <div class="auth-field">
+                <label class="form-label" for="password">Password</label>
+                <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
+            </div>
+
+            <button class="btn btn-primary auth-primary" type="submit">Sign in</button>
+        </form>
+
+        <div class="auth-footer-link">
+            <span>New account?</span>
+            <a href="{{ url_for('account_register') }}">Create one</a>
+        </div>
+    </section>
+</section>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Routers - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading with-action">
+    <h1>Routers</h1>
+    <a class="btn btn-primary" href="{{ url_for('routers_add') }}">Add Router</a>
+</section>
+
+{% if not routers %}
+    <div class="empty-state">
+        <h2>No routers saved</h2>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('routers_add') }}">Add Router</a>
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table align-middle voucher-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>IP address</th>
+                    <th>API port</th>
+                    <th>Username</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for router in routers %}
+                    <tr>
+                        <td class="fw-semibold">
+                            {{ router.name }}
+                            {% if active_router and active_router.id == router.id %}
+                                <span class="router-pill">Active</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ router.router_ip }}</td>
+                        <td>{{ router.api_port }}</td>
+                        <td>{{ router.router_username }}</td>
+                        <td class="text-end actions-cell">
+                            <div class="action-group">
+                                <form method="post" class="inline-form" action="{{ url_for('routers_use', router_id=router.id) }}">
+                                    <button class="action-link action-use" type="submit">Use</button>
+                                </form>
+                                <a class="action-link action-edit" href="{{ url_for('routers_edit', router_id=router.id) }}">Edit</a>
+                                <form method="post" class="inline-form" action="{{ url_for('routers_delete', router_id=router.id) }}" onsubmit="return confirm('Delete this router and its local vouchers?');">
+                                    <button class="action-link action-danger" type="submit">Delete</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

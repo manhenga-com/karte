@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if mode == 'edit' else 'Add' }} Router - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>{{ 'Edit' if mode == 'edit' else 'Add' }} Router</h1>
+</section>
+
+<form method="post" class="simple-form">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label" for="name">Router name</label>
+            <input class="form-control form-control-lg" id="name" name="name" value="{{ router.name }}" placeholder="Home Router" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="router_ip">Router IP address</label>
+            <input class="form-control form-control-lg" id="router_ip" name="router_ip" value="{{ router.router_ip }}" placeholder="192.168.88.1" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="api_port">API port</label>
+            <input class="form-control form-control-lg" id="api_port" name="api_port" value="{{ router.api_port or '8728' }}" inputmode="numeric" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="router_username">MikroTik username</label>
+            <input class="form-control form-control-lg" id="router_username" name="router_username" value="{{ router.router_username }}" autocomplete="off" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="router_password">MikroTik password</label>
+            <input class="form-control form-control-lg" id="router_password" name="router_password" type="password" value="{{ router.router_password }}" autocomplete="off">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button class="btn btn-primary btn-lg" name="action" value="save" type="submit">Save Router</button>
+        <button class="btn btn-outline-primary btn-lg" name="action" value="test" type="submit">Save and Test Login</button>
+        <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('routers') }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

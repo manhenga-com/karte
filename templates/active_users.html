@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Connected Users - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading with-action">
+    <div>
+        <h1>Connected Users</h1>
+        <p class="text-muted mb-0">Live MikroTik hotspot sessions on {{ summary.router_name }}</p>
+    </div>
+    <div class="heading-actions">
+        <a class="btn btn-outline-secondary" href="{{ url_for('active_hotspot_users') }}">Refresh</a>
+        <a class="btn btn-primary" href="{{ url_for('vouchers') }}">View Vouchers</a>
+    </div>
+</section>
+
+<section class="status-grid">
+    <div class="status-card metric-card">
+        <span>Connected</span>
+        <strong>{{ summary.connected }}</strong>
+    </div>
+    <div class="status-card metric-card">
+        <span>Total Data Used</span>
+        <strong>{{ summary.total_data_label }}</strong>
+    </div>
+    <div class="status-card metric-card">
+        <span>Refreshed</span>
+        <strong>{{ summary.refreshed_at }}</strong>
+    </div>
+</section>
+
+{% if not active_users %}
+    <div class="empty-state">
+        <h2>No hotspot users connected</h2>
+        <p class="text-muted mb-0">When users login through the MikroTik hotspot, they will appear here.</p>
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table align-middle voucher-table connected-users-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>IP Address</th>
+                    <th>MAC Address</th>
+                    <th>Profile</th>
+                    <th>Uptime</th>
+                    <th>Data Used</th>
+                    <th>Upload</th>
+                    <th>Download</th>
+                    <th>Time Left</th>
+                    <th>Idle</th>
+                    <th>Server</th>
+                    <th>Login By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in active_users %}
+                    <tr>
+                        <td class="fw-semibold">{{ user.username }}</td>
+                        <td>{{ user.ip_address }}</td>
+                        <td><code>{{ user.mac_address }}</code></td>
+                        <td>{{ user.profile }}</td>
+                        <td>{{ user.uptime }}</td>
+                        <td>{{ user.data_total_label }}</td>
+                        <td>{{ user.data_in_label }}</td>
+                        <td>{{ user.data_out_label }}</td>
+                        <td>{{ user.session_time_left }}</td>
+                        <td>{{ user.idle_time }}</td>
+                        <td>{{ user.server }}</td>
+                        <td>{{ user.login_by }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

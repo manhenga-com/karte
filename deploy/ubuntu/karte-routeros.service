@@ -1,0 +1,17 @@
+[Unit]
+Description=Karte RouterOS Management System
+After=network.target mysql.service mariadb.service
+
+[Service]
+Type=simple
+User=karte
+Group=www-data
+WorkingDirectory=/opt/karte-routeros
+EnvironmentFile=/opt/karte-routeros/.env
+ExecStart=/opt/karte-routeros/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8008 --access-logfile - --error-logfile - wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
