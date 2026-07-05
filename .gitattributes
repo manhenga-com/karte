@@ -1,2 +1,49 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Environment variables / secrets
+
+config.py
+instance/
+
+# Flask
+.flaskenv
+venv
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+*.log
+logs/
+
+# Uploads / user files
+uploads/
+static/uploads/
+
+# IDE / editor files
+.vscode/
+.idea/
+
+# Windows files
+Thumbs.db
+desktop.ini
+
+# Mac files
+.DS_Store
+
+# MySQL dumps/backups
+*.sql
+*.dump
+*.bak

@@ -5,3 +5,6 @@ __pycache__/
 *.log
 storage/*.sqlite
 storage/*.sqlite-*
+
+
+hotspot-login-page/
