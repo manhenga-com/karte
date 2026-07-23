@@ -23,7 +23,7 @@ env/
 
 config.py
 instance/
-.env
+
 
 # Flask
 .flaskenv
