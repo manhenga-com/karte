@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}WireGuard - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <p class="eyebrow">WireGuard</p>
+    <h1>WireGuard Interfaces</h1>
+</section>
+
+<section class="simple-form">
+    <h2 class="section-title">Create WireGuard Interface</h2>
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="interface_name">Interface name</label>
+                <input class="form-control form-control-lg" id="interface_name" name="interface_name" value="{{ form.interface_name }}" placeholder="wg0" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="listen_port">Listen port</label>
+                <input class="form-control form-control-lg" id="listen_port" name="listen_port" type="number" min="1" max="65535" value="{{ form.listen_port or '51820' }}" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="private_key">Server private key</label>
+                <input class="form-control form-control-lg" id="private_key" name="private_key" type="password" autocomplete="new-password" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="public_key">Server public key</label>
+                <input class="form-control form-control-lg" id="public_key" name="public_key" value="{{ form.public_key }}" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="address">Server address</label>
+                <input class="form-control form-control-lg" id="address" name="address" value="{{ form.address }}" placeholder="10.10.10.1/24" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="mtu">MTU</label>
+                <input class="form-control form-control-lg" id="mtu" name="mtu" type="number" min="576" max="9000" value="{{ form.mtu or '1420' }}" required>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label" for="router_id">Linked router</label>
+                <select class="form-control form-control-lg" id="router_id" name="router_id">
+                    <option value="">No router link</option>
+                    {% for router in routers %}
+                        <option value="{{ router.id }}" {% if form.router_id|string == router.id|string %}selected{% endif %}>{{ router.name }} - {{ router.router_ip }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label" for="notes">Notes</label>
+                <textarea class="form-control form-control-lg" id="notes" name="notes" rows="3">{{ form.notes }}</textarea>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary btn-lg" type="submit">Save Interface</button>
+        </div>
+    </form>
+</section>
+
+<section class="profiles-heading">
+    <div class="page-heading with-action">
+        <h1>Saved Interfaces</h1>
+    </div>
+    {% if interfaces %}
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Address</th>
+                        <th>Port</th>
+                        <th>MTU</th>
+                        <th>Router</th>
+                        <th>Created</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for interface in interfaces %}
+                        <tr>
+                            <td class="fw-semibold">{{ interface.interface_name }}</td>
+                            <td>{{ interface.address }}</td>
+                            <td>{{ interface.listen_port }}</td>
+                            <td>{{ interface.mtu }}</td>
+                            <td>{{ interface.router_name or '-' }}</td>
+                            <td>{{ interface.created_at }}</td>
+                            <td class="text-end">
+                                <a class="action-link action-edit" href="{{ url_for('wireguard_interface_script', interface_id=interface.id) }}">Script</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="empty-state">
+            <h2>No WireGuard interfaces yet</h2>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

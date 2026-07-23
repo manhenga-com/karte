@@ -9,13 +9,12 @@
 </section>
 
 <form method="post" class="simple-form login-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="next" value="{{ next_url or request.args.get('next', '') }}">
+    <input type="hidden" name="router_id" value="{{ router.id or '' }}">
+    <input type="hidden" name="name" value="{{ router.name or 'Router' }}">
 
     <div class="row g-3">
-        <div class="col-md-6">
-            <label class="form-label" for="name">Router name</label>
-            <input class="form-control form-control-lg" id="name" name="name" value="{{ router.name }}" placeholder="Home Router" required>
-        </div>
         <div class="col-md-6">
             <label class="form-label" for="router_ip">Connect to</label>
             <input class="form-control form-control-lg" id="router_ip" name="router_ip" value="{{ router.router_ip }}" placeholder="192.168.88.1" required>
@@ -30,7 +29,7 @@
         </div>
         <div class="col-md-6">
             <label class="form-label" for="router_password">Password</label>
-            <input class="form-control form-control-lg" id="router_password" name="router_password" type="password" value="{{ router.router_password }}" autocomplete="current-password">
+            <input class="form-control form-control-lg" id="router_password" name="router_password" type="password" autocomplete="current-password">
         </div>
     </div>
 

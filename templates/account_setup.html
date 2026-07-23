@@ -4,18 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0073e6">
-    <title>Sign In - Karte RouterOS Management System</title>
+    <title>Administrator Setup - Karte</title>
     <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body class="auth-body">
     <main class="auth-shell">
-        <section class="auth-card" aria-labelledby="account-login-title">
+        <section class="auth-card" aria-labelledby="setup-title">
             <img class="auth-app-icon" src="{{ url_for('static', filename='icon.svg') }}" alt="" width="48" height="48">
             <p class="auth-product">Karte RouterOS</p>
-            <h1 id="account-login-title">Sign in</h1>
-            <p class="auth-note">Use your local administrator or cashier account.</p>
+            <h1 id="setup-title">Create administrator</h1>
+            <p class="auth-note">This page closes after the first local account is created.</p>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% for category, message in messages %}
@@ -25,21 +25,16 @@
 
             <form method="post" class="auth-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="next" value="{{ next_url or request.args.get('next', '') }}">
                 <div class="auth-field">
                     <label class="form-label" for="username">Username</label>
-                    <input class="form-control" id="username" name="username" value="{{ username }}" autocomplete="username" required autofocus>
+                    <input class="form-control" id="username" name="username" value="{{ user.username }}" autocomplete="username" required autofocus>
                 </div>
                 <div class="auth-field">
                     <label class="form-label" for="password">Password</label>
-                    <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required>
+                    <input class="form-control" id="password" name="password" type="password" minlength="10" autocomplete="new-password" required>
                 </div>
-                <button class="btn btn-primary auth-primary" type="submit">Sign in</button>
+                <button class="btn btn-primary auth-primary" type="submit">Create administrator</button>
             </form>
-
-            {% if setup_available %}
-                <p class="auth-footer-link"><a href="{{ url_for('account_setup') }}">First-time administrator setup</a></p>
-            {% endif %}
         </section>
     </main>
 </body>

@@ -32,6 +32,10 @@
             <strong><span class="status-pill status-{{ voucher.status or 'unused' }}">{{ (voucher.status or 'unused')|title }}</span></strong>
         </div>
         <div class="detail-item">
+            <span>Price</span>
+            <strong>{{ voucher.price|money }}</strong>
+        </div>
+        <div class="detail-item">
             <span>Time limit</span>
             <strong>{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</strong>
         </div>
@@ -68,6 +72,14 @@
             <strong>{{ voucher.activated_at or '-' }}</strong>
         </div>
         <div class="detail-item">
+            <span>Expires at</span>
+            <strong>{{ voucher.expires_at or '-' }}</strong>
+        </div>
+        <div class="detail-item">
+            <span>Removed at</span>
+            <strong>{{ voucher.removed_at or '-' }}</strong>
+        </div>
+        <div class="detail-item">
             <span>First login MAC</span>
             <strong>{{ voucher.first_login_mac or '-' }}</strong>
         </div>
@@ -98,13 +110,17 @@
 
 <div class="form-actions">
     <form method="post" action="{{ url_for('disable_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Disable this voucher on the MikroTik router?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn btn-outline-secondary" type="submit">Disable</button>
     </form>
-    <form method="post" action="{{ url_for('renew_voucher', voucher_id=voucher.id) }}">
-        <button class="btn btn-outline-primary" type="submit">Renew</button>
+    <form method="post" action="{{ url_for('sell_voucher', voucher_id=voucher.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="payment_method" value="Cash">
+        <button class="btn btn-outline-primary" type="submit">Record Sale</button>
     </form>
-    <form method="post" action="{{ url_for('delete_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Delete this voucher from the MikroTik router and keep local history?');">
-        <button class="btn btn-outline-danger" type="submit">Delete</button>
+    <form method="post" action="{{ url_for('delete_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Remove this voucher from the MikroTik router and keep local history?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn btn-outline-danger" type="submit">Remove</button>
     </form>
 </div>
 {% endblock %}

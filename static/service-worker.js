@@ -1,9 +1,9 @@
-const CACHE_NAME = 'karte-routeros-management-v20';
+const CACHE_NAME = 'karte-routeros-management-v31';
 const STATIC_ASSETS = [
   '/static/app.css',
   '/static/vendor/bootstrap.min.css',
-  '/static/mikrotik-symbol.svg',
-  '/static/mikrotik-logo.svg',
+  '/static/vendor/chart.umd.min.js',
+  '/static/icon.svg',
   '/static/manifest.json'
 ];
 

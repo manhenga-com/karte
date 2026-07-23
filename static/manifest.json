@@ -9,7 +9,7 @@
   "theme_color": "#3bb5b6",
   "icons": [
     {
-      "src": "/static/mikrotik-symbol.svg",
+      "src": "/static/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Package - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>Edit Package</h1>
+</section>
+
+<form method="post" class="simple-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label" for="name">Name</label>
+            <input class="form-control form-control-lg" id="name" name="name" value="{{ package.name }}" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="rate_limit">Speed limit down/up</label>
+            <input class="form-control form-control-lg" id="rate_limit" name="rate_limit" value="{{ package.rate_limit }}" placeholder="5M/2M">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="validity_period">Validity</label>
+            <input class="form-control form-control-lg" id="validity_period" name="validity_period" value="{{ package.validity_period }}" required>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="data_cap">Data cap</label>
+            <input class="form-control form-control-lg" id="data_cap" name="data_cap" value="{{ package.data_cap }}">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="price">Price</label>
+            <input class="form-control form-control-lg" id="price" name="price" type="number" min="0" step="0.01" value="{{ package.price }}">
+        </div>
+        <div class="col-12">
+            <label class="form-check">
+                <input class="form-check-input" type="checkbox" name="archived" value="1" {% if package.archived|int %}checked{% endif %}>
+                <span class="form-check-label">Archived</span>
+            </label>
+        </div>
+    </div>
+    <div class="form-actions">
+        <button class="btn btn-primary btn-lg" type="submit">Save Package</button>
+        <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('packages') }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

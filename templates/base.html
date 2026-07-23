@@ -3,124 +3,90 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#3bb5b6">
+    <meta name="theme-color" content="#0073e6">
     <title>{% block title %}Karte RouterOS Management System{% endblock %}</title>
     <link rel="manifest" href="{{ url_for('manifest') }}">
-    <link rel="icon" href="{{ url_for('static', filename='mikrotik-symbol.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
-{% set auth_page = request.endpoint in ['account_login', 'account_register'] %}
-<body class="{% if auth_page %}auth-body{% endif %}">
-    <nav class="app-nav {% if auth_page %}auth-nav{% endif %}">
-        <a class="brand" href="{{ url_for('home') }}">
-            <img class="brand-logo" src="{{ url_for('static', filename='mikrotik-logo.svg') }}" alt="MikroTik" width="132" height="23">
-            <span class="brand-app-name">Karte RouterOS Management System</span>
-        </a>
-        <div class="nav-links">
-            {% if current_user %}
-                <a class="nav-link {% if request.endpoint == 'home' %}active{% endif %}" href="{{ url_for('home') }}">Home</a>
-                <a class="nav-link {% if request.endpoint in ['routers', 'routers_add', 'routers_edit'] %}active{% endif %}" href="{{ url_for('routers') }}">Routers</a>
-                <details class="nav-dropdown">
-                    <summary class="nav-link {% if request.endpoint in ['hotspot_profiles', 'active_hotspot_users', 'create_voucher', 'vouchers', 'voucher_details', 'edit_voucher', 'print_vouchers', 'router_setup_script', 'settings', 'login'] %}active{% endif %}">Manage</summary>
-                    <div class="nav-dropdown-menu">
-                        <span class="nav-dropdown-label">Hotspot</span>
-                        <a class="{% if request.endpoint == 'hotspot_profiles' %}active{% endif %}" href="{{ url_for('hotspot_profiles') }}">Profiles</a>
-                        <a class="{% if request.endpoint == 'active_hotspot_users' %}active{% endif %}" href="{{ url_for('active_hotspot_users') }}">Connected Users</a>
-                        <a class="{% if request.endpoint == 'create_voucher' %}active{% endif %}" href="{{ url_for('create_voucher') }}">Create Voucher</a>
-                        <a class="{% if request.endpoint in ['vouchers', 'voucher_details', 'edit_voucher'] %}active{% endif %}" href="{{ url_for('vouchers') }}">View Vouchers</a>
-                        <a class="{% if request.endpoint == 'print_vouchers' %}active{% endif %}" href="{{ url_for('print_vouchers') }}">Print Vouchers</a>
-                        <span class="nav-dropdown-label">Router</span>
-                        <a class="{% if request.endpoint == 'router_setup_script' %}active{% endif %}" href="{{ url_for('router_setup_script') }}">Setup Script</a>
-                        <a class="{% if request.endpoint == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">Router Settings</a>
-                        <span class="nav-dropdown-label">Session</span>
-                        {% if active_router %}
-                            <a href="{{ url_for('logout') }}">Router Logout</a>
-                        {% else %}
-                            <a class="{% if request.endpoint == 'login' %}active{% endif %}" href="{{ url_for('login') }}">Router Login</a>
-                        {% endif %}
-                    </div>
-                </details>
-                <a class="nav-link {% if request.endpoint == 'account_upgrade' %}active{% endif %}" href="{{ url_for('account_upgrade') }}">Upgrade</a>
-                <form class="nav-form" method="post" action="{{ url_for('account_logout') }}">
-                    <button class="nav-link nav-button" type="submit">Account Logout</button>
-                </form>
-            {% else %}
-                <a class="nav-link" href="{{ url_for('account_login') }}">Login</a>
-                <a class="nav-link" href="{{ url_for('account_register') }}">Register</a>
-            {% endif %}
-        </div>
-    </nav>
-
-    <main class="container app-shell {% if auth_page %}auth-shell{% endif %}">
-        {% if not auth_page and not current_user %}
-            <div class="router-banner muted">
-                <span>Sign in to manage RouterOS routers</span>
-            </div>
-        {% elif not auth_page and active_router %}
-            <div class="router-banner">
-                <span>Active router</span>
-                <strong>{{ active_router.name }}</strong>
-                <small>{{ active_router.router_ip }}:{{ active_router.api_port }}</small>
-                <small>{{ session_minutes_left }} min left</small>
-            </div>
-        {% elif not auth_page %}
-            <div class="router-banner muted">
-                <span>No router session</span>
-                <a href="{{ url_for('login') }}">Login to router</a>
-            </div>
-        {% endif %}
-
-        {% if not auth_page and current_user and trial_status and trial_status.is_trial %}
-            <div class="trial-banner {% if trial_status.expired %}expired{% endif %}">
-                <span>Free trial</span>
-                {% if trial_status.expired %}
-                    <strong>Expired</strong>
-                {% else %}
-                    <strong>{{ trial_status.days_left }} days left</strong>
+<body class="forti-body">
+    <div class="forti-layout">
+        <aside class="forti-sidebar">
+            <a class="forti-brand" href="{{ url_for('home') }}">
+                <img src="{{ url_for('static', filename='icon.svg') }}" alt="" width="32" height="32">
+                <span>Karte</span>
+            </a>
+            <nav class="forti-nav" aria-label="Main navigation">
+                <a class="{% if request.endpoint == 'home' %}active{% endif %}" href="{{ url_for('home') }}">Dashboard</a>
+                <a class="{% if request.endpoint in ['packages', 'edit_package'] %}active{% endif %}" href="{{ url_for('packages') }}">Packages</a>
+                <a class="{% if request.endpoint == 'bulk_vouchers' %}active{% endif %}" href="{{ url_for('bulk_vouchers') }}">Bulk Generate</a>
+                <a class="{% if request.endpoint in ['voucher_batches', 'print_voucher_batch'] %}active{% endif %}" href="{{ url_for('voucher_batches') }}">Batches</a>
+                <a class="{% if request.endpoint in ['vouchers', 'voucher_details', 'edit_voucher', 'create_voucher'] %}active{% endif %}" href="{{ url_for('vouchers') }}">Vouchers</a>
+                <a class="{% if request.endpoint == 'sales' %}active{% endif %}" href="{{ url_for('sales') }}">Sales</a>
+                {% if current_user and current_user.is_admin %}
+                    <span>Administration</span>
+                    <a class="{% if request.endpoint in ['routers', 'routers_add', 'routers_edit'] %}active{% endif %}" href="{{ url_for('routers') }}">Routers</a>
+                    <a class="{% if request.endpoint == 'active_hotspot_users' %}active{% endif %}" href="{{ url_for('active_hotspot_users') }}">Active Users</a>
+                    <a class="{% if request.endpoint in ['reconciliation_issues', 'update_reconciliation_issue_status'] %}active{% endif %}" href="{{ url_for('reconciliation_issues') }}">Unrecognized</a>
+                    <a class="{% if request.endpoint == 'login' %}active{% endif %}" href="{{ url_for('login') }}">Router Login</a>
+                    <a class="{% if request.endpoint == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">Router Settings</a>
+                    <a class="{% if request.endpoint == 'router_setup_script' %}active{% endif %}" href="{{ url_for('router_setup_script') }}">Setup Script</a>
+                    <a class="{% if request.endpoint in ['wireguard_interfaces', 'wireguard_interface_script'] %}active{% endif %}" href="{{ url_for('wireguard_interfaces') }}">WireGuard</a>
+                    <a class="{% if request.endpoint in ['user_management', 'create_user', 'edit_user'] %}active{% endif %}" href="{{ url_for('user_management') }}">Users</a>
                 {% endif %}
-                <small>{{ trial_status.router_count }}/{{ trial_status.router_limit }} router used</small>
-                <a href="{{ url_for('account_upgrade') }}">Upgrade</a>
-            </div>
-        {% endif %}
+            </nav>
+        </aside>
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+        <div class="forti-main">
+            <header class="forti-topbar">
+                <div>
+                    <strong>Karte RouterOS Management System</strong>
+                    {% if active_router %}
+                        <small>{{ active_router.name }} | {{ active_router.router_ip }}:{{ active_router.api_port }} | {{ session_minutes_left }} min</small>
+                    {% else %}
+                        <small>Router IP login mode</small>
+                    {% endif %}
+                </div>
+                <div class="forti-user">
+                    {% if active_router and current_user and current_user.is_admin %}
+                        <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button class="topbar-link" type="submit">Router Logout</button>
+                        </form>
+                    {% endif %}
+                    {% if current_user %}
+                        <span>{{ current_user.username }} | {{ current_user.role|title }}</span>
+                        <form method="post" action="{{ url_for('app_logout') }}" class="inline-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button class="topbar-link" type="submit">Sign out</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </header>
 
-        {% block content %}{% endblock %}
-    </main>
+            <main class="forti-content">
+                {% if not active_router and request.endpoint != 'login' %}
+                    <div class="router-banner muted">
+                        <span>No router session</span>
+                        <a href="{{ url_for('login') }}">Login with router IP</a>
+                    </div>
+                {% endif %}
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
 
     <script>
-        document.addEventListener('click', function (event) {
-            document.querySelectorAll('.nav-dropdown[open]').forEach(function (dropdown) {
-                if (!dropdown.contains(event.target)) {
-                    dropdown.removeAttribute('open');
-                }
-            });
-        });
-
-        document.addEventListener('keydown', function (event) {
-            if (event.key === 'Escape') {
-                document.querySelectorAll('.nav-dropdown[open]').forEach(function (dropdown) {
-                    dropdown.removeAttribute('open');
-                });
-            }
-        });
-
-        document.querySelectorAll('.nav-dropdown-menu a').forEach(function (link) {
-            link.addEventListener('click', function () {
-                var dropdown = link.closest('.nav-dropdown');
-                if (dropdown) {
-                    dropdown.removeAttribute('open');
-                }
-            });
-        });
-
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
                 navigator.serviceWorker.register('{{ url_for("service_worker") }}').catch(function () {});

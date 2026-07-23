@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Generate - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading with-action">
+    <div>
+        <h1>Bulk Generate</h1>
+        <p class="text-muted mb-0">Create a batch from a package and push it to the active router.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('packages') }}">Manage Packages</a>
+</section>
+
+{% if not packages %}
+    <div class="empty-state">
+        <h2>No active packages</h2>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('packages') }}">Create Package</a>
+    </div>
+{% else %}
+    <form method="post" class="simple-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label" for="package_id">Package</label>
+                <select class="form-control form-control-lg" id="package_id" name="package_id" required>
+                    <option value="">Choose package</option>
+                    {% for package in packages %}
+                        <option value="{{ package.id }}" {% if form.package_id == package.id|string %}selected{% endif %}>{{ package.name }} | {{ package.validity_period }} | {{ package.price|money }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="quantity">Quantity</label>
+                <input class="form-control form-control-lg" id="quantity" name="quantity" type="number" min="1" max="2000" value="{{ form.quantity }}" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="prefix">Prefix</label>
+                <input class="form-control form-control-lg" id="prefix" name="prefix" value="{{ form.prefix }}" maxlength="12">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="code_length">Code length</label>
+                <input class="form-control form-control-lg" id="code_length" name="code_length" type="number" min="6" max="18" value="{{ form.code_length }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="password_length">Password length</label>
+                <input class="form-control form-control-lg" id="password_length" name="password_length" type="number" min="4" max="18" value="{{ form.password_length }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="character_set">Voucher characters</label>
+                <select class="form-control form-control-lg" id="character_set" name="character_set">
+                    <option value="uppercase_numbers" {% if form.character_set == 'uppercase_numbers' %}selected{% endif %}>Letters and numbers</option>
+                    <option value="uppercase" {% if form.character_set == 'uppercase' %}selected{% endif %}>Letters only</option>
+                    <option value="numbers" {% if form.character_set == 'numbers' %}selected{% endif %}>Numbers only</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <label class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="avoid_ambiguous" value="1" {% if form.avoid_ambiguous == '1' %}checked{% endif %}>
+                    <span class="form-check-label">Avoid 0, O, 1, I, L</span>
+                </label>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="payment_method">Payment method</label>
+                <select class="form-control form-control-lg" id="payment_method" name="payment_method">
+                    <option value="Cash" {% if form.payment_method == 'Cash' %}selected{% endif %}>Cash</option>
+                    <option value="Mobile Money" {% if form.payment_method == 'Mobile Money' %}selected{% endif %}>Mobile Money</option>
+                    <option value="Card" {% if form.payment_method == 'Card' %}selected{% endif %}>Card</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary btn-lg" type="submit">Generate Batch</button>
+            <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('voucher_batches') }}">View Batches</a>
+        </div>
+    </form>
+{% endif %}
+{% endblock %}

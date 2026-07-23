@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}WireGuard Script - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading with-action">
+    <div>
+        <p class="eyebrow">WireGuard</p>
+        <h1>{{ interface.interface_name }} Setup Script</h1>
+        <p class="text-muted mb-0">{{ interface.address }} on UDP {{ interface.listen_port }}</p>
+    </div>
+    <div class="heading-actions">
+        <a class="btn btn-outline-secondary" href="{{ url_for('wireguard_interfaces') }}">Back</a>
+    </div>
+</section>
+
+<section class="script-panel">
+    <div class="script-panel-top">
+        <h2>Ubuntu WireGuard Script</h2>
+        <button class="btn btn-primary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('wireguard-script').value)">Copy</button>
+    </div>
+    <textarea class="script-box" id="wireguard-script" readonly>{{ script }}</textarea>
+    <div class="script-steps">
+        <h2>Run On Ubuntu</h2>
+        <ol>
+            <li>Review the script and change WAN_INTERFACE if your public network card is not eth0.</li>
+            <li>Copy the script into a file such as setup-wireguard.sh.</li>
+            <li>Run chmod +x setup-wireguard.sh and then sudo ./setup-wireguard.sh.</li>
+        </ol>
+    </div>
+</section>
+{% endblock %}

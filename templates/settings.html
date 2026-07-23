@@ -8,6 +8,7 @@
 </section>
 
 <form method="post" class="simple-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="row g-3">
         <div class="col-md-6">
             <label class="form-label" for="name">Router name</label>
@@ -27,7 +28,7 @@
         </div>
         <div class="col-md-6">
             <label class="form-label" for="router_password">MikroTik password</label>
-            <input class="form-control form-control-lg" id="router_password" name="router_password" type="password" value="{{ settings.router_password }}" autocomplete="off">
+            <input class="form-control form-control-lg" id="router_password" name="router_password" type="password" autocomplete="new-password" placeholder="Leave blank to keep current password">
         </div>
     </div>
 

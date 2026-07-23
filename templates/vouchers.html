@@ -1,115 +1,376 @@
 {% extends "base.html" %}
 
-{% block title %}View Vouchers - Karte RouterOS Management System{% endblock %}
+{% block title %}Vouchers - Karte RouterOS Management System{% endblock %}
+
+{% macro sort_header(label, key, extra_class='') -%}
+    <th class="{{ extra_class }}" aria-sort="{% if state.sort == key %}{{ 'ascending' if state.direction == 'asc' else 'descending' }}{% else %}none{% endif %}">
+        <a class="voucher-sort-link" href="{{ sort_urls[key] }}" data-voucher-nav>
+            <span>{{ label }}</span>
+            <span class="sort-indicator" aria-hidden="true">
+                {% if state.sort == key %}{{ '&#8593;'|safe if state.direction == 'asc' else '&#8595;'|safe }}{% else %}&#8645;{% endif %}
+            </span>
+        </a>
+    </th>
+{%- endmacro %}
 
 {% block content %}
 {% set time_labels = {'30m': '30 Minutes', '1h': '1 Hour', '2h': '2 Hours', '1d': '1 Day', '1w': 'Weekly', '30d': 'Monthly', '0s': 'Lifetime'} %}
 {% set data_labels = {'': 'Unlimited', '524288000': '500 MB', '1073741824': '1 GB', '2147483648': '2 GB', '5368709120': '5 GB'} %}
-<section class="page-heading with-action">
-    <h1>View Vouchers</h1>
+{% set export_pdf_url = url_for('export_vouchers_pdf', **export_query) %}
+{% set export_csv_url = url_for('export_vouchers_csv', **export_query) %}
+
+<section class="page-heading with-action voucher-page-heading">
+    <div>
+        <h1>Vouchers</h1>
+        <p class="text-muted mb-0">Search, filter, and manage hotspot access codes.</p>
+    </div>
     <div class="heading-actions">
+        <a class="btn btn-outline-secondary export-link" href="{{ export_pdf_url }}" data-export-url="{{ export_pdf_url }}">Download PDF</a>
+        <a class="btn btn-outline-secondary export-link" href="{{ export_csv_url }}" data-export-url="{{ export_csv_url }}">Download CSV</a>
         <form method="post" action="{{ url_for('sync_vouchers') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="btn btn-outline-secondary" type="submit">Refresh Status</button>
         </form>
         <a class="btn btn-primary" href="{{ url_for('create_voucher') }}">Create Voucher</a>
     </div>
 </section>
 
-<section class="status-grid">
-    <a class="status-card {% if selected_status == 'all' %}active{% endif %}" href="{{ url_for('vouchers') }}">
-        <span>All</span>
-        <strong>{{ counts.get('all', 0) }}</strong>
+<nav class="voucher-status-tabs" aria-label="Voucher status">
+    <a class="{% if selected_status == 'all' %}active{% endif %}" href="{{ status_urls.all }}" data-voucher-nav>
+        <span>All</span><strong>{{ counts.get('all', 0) }}</strong>
     </a>
     {% for status in statuses %}
-        <a class="status-card {% if selected_status == status %}active{% endif %}" href="{{ url_for('vouchers', status=status) }}">
-            <span>{{ status|title }}</span>
-            <strong>{{ counts.get(status, 0) }}</strong>
+        <a class="{% if selected_status == status %}active{% endif %}" href="{{ status_urls[status] }}" data-voucher-nav>
+            <span>{{ status|title }}</span><strong>{{ counts.get(status, 0) }}</strong>
         </a>
     {% endfor %}
+</nav>
+
+<section class="voucher-control-panel" aria-label="Voucher search and filters">
+    <form id="voucher-filter-form" class="voucher-filter-form" method="get" action="{{ url_for('vouchers') }}">
+        <input type="hidden" name="sort" value="{{ state.sort }}">
+        <input type="hidden" name="direction" value="{{ state.direction }}">
+        <input id="voucher-page-size-value" type="hidden" name="per_page" value="{{ state.per_page }}">
+
+        <div class="voucher-search-field">
+            <label class="visually-hidden" for="voucher-search">Search vouchers</label>
+            <input
+                id="voucher-search"
+                class="form-control"
+                type="search"
+                name="q"
+                value="{{ state.q }}"
+                placeholder="Search code, profile, status, device, IP or MAC"
+                autocomplete="off"
+            >
+            <button id="voucher-search-clear" class="voucher-search-clear" type="button" aria-label="Clear search" title="Clear search" {% if not state.q %}hidden{% endif %}>&times;</button>
+        </div>
+
+        <label class="voucher-filter-field">
+            <span>Status</span>
+            <select class="form-select" name="status" data-auto-submit>
+                <option value="all" {% if state.status == 'all' %}selected{% endif %}>All statuses</option>
+                {% for status in statuses %}
+                    <option value="{{ status }}" {% if state.status == status %}selected{% endif %}>{{ status|title }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label class="voucher-filter-field">
+            <span>Profile</span>
+            <select class="form-select" name="profile" data-auto-submit>
+                <option value="">All profiles</option>
+                {% for profile in profiles %}
+                    <option value="{{ profile }}" {% if state.profile == profile %}selected{% endif %}>{{ profile }}</option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <label class="voucher-filter-field voucher-date-kind">
+            <span>Date field</span>
+            <select class="form-select" name="date_field" data-auto-submit>
+                <option value="created" {% if state.date_field == 'created' %}selected{% endif %}>Created date</option>
+                <option value="expiry" {% if state.date_field == 'expiry' %}selected{% endif %}>Expiry date</option>
+            </select>
+        </label>
+
+        <label class="voucher-filter-field voucher-date-field">
+            <span>From</span>
+            <input class="form-control" type="date" name="date_from" value="{{ state.date_from }}" data-auto-submit>
+        </label>
+
+        <label class="voucher-filter-field voucher-date-field">
+            <span>To</span>
+            <input class="form-control" type="date" name="date_to" value="{{ state.date_to }}" data-auto-submit>
+        </label>
+
+        <noscript><button class="btn btn-primary" type="submit">Apply filters</button></noscript>
+    </form>
+
+    {% if active_filters %}
+        <div class="voucher-active-filters" aria-label="Active filters">
+            <span class="active-filter-label">Active filters</span>
+            {% for filter in active_filters %}
+                <a class="filter-chip" href="{{ filter.url }}" data-voucher-nav>{{ filter.label }} <span aria-hidden="true">&times;</span></a>
+            {% endfor %}
+            <a class="clear-filter-link" href="{{ clear_filters_url }}" data-voucher-nav>Clear all filters</a>
+        </div>
+    {% endif %}
 </section>
 
-{% if not vouchers %}
-    <div class="empty-state">
-        <h2>No vouchers found</h2>
-        <a class="btn btn-primary btn-lg" href="{{ url_for('create_voucher') }}">Create Voucher</a>
+<div id="voucher-results" class="voucher-results" aria-live="polite">
+    <div id="voucher-loading" class="voucher-loading" hidden>
+        <span class="voucher-spinner" aria-hidden="true"></span>
+        <span>Loading vouchers...</span>
     </div>
-{% else %}
-    <div class="table-responsive">
-        <table class="table align-middle voucher-table">
-            <thead>
-                <tr>
-                    <th>Code</th>
-                    <th>Password</th>
-                    <th>Profile</th>
-                    <th>Time</th>
-                    <th>Data</th>
-                    <th>Users</th>
-                    <th>Online</th>
-                    <th>Status</th>
-                    <th>Activated</th>
-                    <th>Time Used</th>
-                    <th>Time Left</th>
-                    <th>Data Used</th>
-                    <th>Data Left</th>
-                    <th>Expiry</th>
-                    <th class="text-end">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for voucher in vouchers %}
-                    <tr>
-                        <td class="fw-semibold">{{ voucher.username }}</td>
-                        <td><code>{{ voucher.password }}</code></td>
-                        <td>{{ voucher.profile }}</td>
-                        <td>{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</td>
-                        <td>{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</td>
-                        <td>{{ voucher.shared_users or '1' }}</td>
-                        <td>{{ voucher.online_users or 0 }}</td>
-                        <td><span class="status-pill status-{{ voucher.status or 'unused' }}">{{ (voucher.status or 'unused')|title }}</span></td>
-                        <td>{{ voucher.activated_at or '-' }}</td>
-                        <td>{{ voucher.uptime_used or '-' }}</td>
-                        <td>{{ voucher|time_remaining }}</td>
-                        <td>{{ voucher.data_used|data_size if voucher.data_used else '-' }}</td>
-                        <td>{{ voucher|data_remaining }}</td>
-                        <td>{{ voucher.expiry_date or '-' }}</td>
-                        <td class="text-end actions-cell">
-                            <div class="action-group">
-                                <a class="action-link action-neutral" href="{{ url_for('print_vouchers', voucher_id=voucher.id) }}">Print</a>
-                                <a class="action-link action-neutral" href="{{ url_for('voucher_details', voucher_id=voucher.id) }}">Details</a>
-                                <a class="action-link action-edit" href="{{ url_for('edit_voucher', voucher_id=voucher.id) }}">Edit</a>
-                                <form method="post" class="inline-form" action="{{ url_for('disable_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Disable this voucher on the MikroTik router?');">
-                                    <button class="action-link action-neutral" type="submit">Disable</button>
-                                </form>
-                                <form method="post" class="inline-form" action="{{ url_for('renew_voucher', voucher_id=voucher.id) }}">
-                                    <button class="action-link action-use" type="submit">Renew</button>
-                                </form>
-                                <form method="post" class="inline-form" action="{{ url_for('delete_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Delete this voucher from the MikroTik router and keep local history?');">
-                                    <button class="action-link action-danger" type="submit">Delete</button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <nav class="pagination-bar" aria-label="Voucher pages">
-        <span>
-            Showing {{ vouchers|length }} of {{ pagination.total }} voucher{{ '' if pagination.total == 1 else 's' }}
-        </span>
-        <div class="pagination-links">
-            {% if pagination.has_prev %}
-                <a class="action-link action-neutral" href="{{ url_for('vouchers', status=selected_status, page=pagination.page - 1, per_page=pagination.per_page) }}">Previous</a>
+
+    {% if not vouchers %}
+        <div class="empty-state voucher-empty-state">
+            {% if active_filters %}
+                <h2>No results found</h2>
+                <p>No vouchers match the current search and filters.</p>
+                <a class="btn btn-outline-secondary" href="{{ clear_filters_url }}" data-voucher-nav>Clear all filters</a>
             {% else %}
-                <span class="pagination-disabled">Previous</span>
-            {% endif %}
-            <strong>Page {{ pagination.page }} of {{ pagination.total_pages }}</strong>
-            {% if pagination.has_next %}
-                <a class="action-link action-neutral" href="{{ url_for('vouchers', status=selected_status, page=pagination.page + 1, per_page=pagination.per_page) }}">Next</a>
-            {% else %}
-                <span class="pagination-disabled">Next</span>
+                <h2>No vouchers yet</h2>
+                <p>Create the first voucher for this router.</p>
+                <a class="btn btn-primary" href="{{ url_for('create_voucher') }}">Create Voucher</a>
             {% endif %}
         </div>
-    </nav>
-{% endif %}
+    {% else %}
+        <div class="table-responsive voucher-table-wrap">
+            <table class="table align-middle voucher-table">
+                <thead>
+                    <tr>
+                        <th class="select-column"><input class="form-check-input" type="checkbox" id="select-all-vouchers" aria-label="Select all vouchers"></th>
+                        {{ sort_header('Code', 'code') }}
+                        {{ sort_header('Password', 'password', 'mobile-secondary') }}
+                        {{ sort_header('Profile', 'profile') }}
+                        {{ sort_header('Time', 'time', 'mobile-secondary') }}
+                        {{ sort_header('Price', 'price') }}
+                        {{ sort_header('Data', 'data', 'mobile-secondary') }}
+                        {{ sort_header('Users', 'users', 'mobile-secondary') }}
+                        {{ sort_header('Online', 'online', 'mobile-secondary') }}
+                        {{ sort_header('Status', 'status') }}
+                        {{ sort_header('Activated', 'activated', 'mobile-secondary') }}
+                        {{ sort_header('Time Used', 'time_used', 'mobile-secondary') }}
+                        <th class="mobile-secondary">Time Left</th>
+                        {{ sort_header('Data Used', 'data_used', 'mobile-secondary') }}
+                        <th class="mobile-secondary">Data Left</th>
+                        {{ sort_header('Expiry', 'expiry') }}
+                        <th class="actions-column"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for voucher in vouchers %}
+                        <tr>
+                            <td class="select-column" data-label="Select"><input class="form-check-input voucher-select" type="checkbox" value="{{ voucher.id }}" aria-label="Select voucher {{ voucher.username }}"></td>
+                            <td class="voucher-code-cell" data-label="Code"><code>{{ voucher.username }}</code></td>
+                            <td class="mobile-secondary" data-label="Password"><code>{{ voucher.password }}</code></td>
+                            <td data-label="Profile">{{ voucher.profile }}</td>
+                            <td class="mobile-secondary" data-label="Time">{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</td>
+                            <td data-label="Price">{{ voucher.price|money }}</td>
+                            <td class="mobile-secondary" data-label="Data">{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</td>
+                            <td class="mobile-secondary" data-label="Users">{{ voucher.shared_users or '1' }}</td>
+                            <td class="mobile-secondary" data-label="Online">{{ voucher.online_users or 0 }}</td>
+                            <td data-label="Status"><span class="status-pill status-{{ voucher.status or 'unused' }}">{{ (voucher.status or 'unused')|title }}</span></td>
+                            <td class="mobile-secondary" data-label="Activated">{{ voucher.activated_at or '-' }}</td>
+                            <td class="mobile-secondary" data-label="Time Used">{{ voucher.uptime_used or '-' }}</td>
+                            <td class="mobile-secondary" data-label="Time Left">{{ voucher|time_remaining }}</td>
+                            <td class="mobile-secondary" data-label="Data Used">{{ voucher.data_used|data_size if voucher.data_used else '-' }}</td>
+                            <td class="mobile-secondary" data-label="Data Left">{{ voucher|data_remaining }}</td>
+                            <td data-label="Expiry">{{ voucher.expiry_date or '-' }}</td>
+                            <td class="actions-cell" data-label="Actions">
+                                <details class="voucher-action-menu">
+                                    <summary class="voucher-menu-trigger" aria-label="Actions for voucher {{ voucher.username }}" title="Voucher actions">&#8942;</summary>
+                                    <div class="voucher-action-list">
+                                        <button class="voucher-menu-item copy-voucher-code" type="button" data-copy-code="{{ voucher.username }}">Copy code</button>
+                                        <a class="voucher-menu-item" href="{{ url_for('voucher_details', voucher_id=voucher.id) }}">View details</a>
+                                        <a class="voucher-menu-item" href="{{ url_for('edit_voucher', voucher_id=voucher.id) }}">Edit</a>
+                                        <a class="voucher-menu-item" href="{{ url_for('print_vouchers', voucher_id=voucher.id) }}">Print</a>
+                                        <form method="post" action="{{ url_for('sell_voucher', voucher_id=voucher.id) }}">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                            <input type="hidden" name="payment_method" value="Cash">
+                                            <button class="voucher-menu-item action-use" type="submit">Sell</button>
+                                        </form>
+                                        <form method="post" action="{{ url_for('disable_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Disable this voucher on the MikroTik router?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                            <button class="voucher-menu-item" type="submit">Disable</button>
+                                        </form>
+                                        <form method="post" action="{{ url_for('delete_voucher', voucher_id=voucher.id) }}" onsubmit="return confirm('Remove this voucher from the MikroTik router and keep local history?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                            <button class="voucher-menu-item action-danger" type="submit">Remove</button>
+                                        </form>
+                                    </div>
+                                </details>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</div>
+
+<nav class="pagination-bar voucher-pagination" aria-label="Voucher pages">
+    <div class="pagination-summary">
+        <span>Showing {{ pagination.first_item }}-{{ pagination.last_item }} of {{ pagination.total }} results</span>
+        <label>
+            <span>Rows per page</span>
+            <select id="voucher-page-size" class="form-select form-select-sm">
+                {% for size in [10, 25, 50, 100] %}
+                    <option value="{{ size }}" {% if pagination.per_page == size %}selected{% endif %}>{{ size }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </div>
+    <div class="pagination-links">
+        {% if pagination.has_prev %}
+            <a class="pagination-link" href="{{ pagination.previous_url }}" data-voucher-nav>Previous</a>
+        {% else %}
+            <span class="pagination-disabled">Previous</span>
+        {% endif %}
+        {% for item in pagination.pages %}
+            <a class="pagination-page {% if item.number == pagination.page %}active{% endif %}" href="{{ item.url }}" {% if item.number == pagination.page %}aria-current="page"{% endif %} data-voucher-nav>{{ item.number }}</a>
+        {% endfor %}
+        {% if pagination.has_next %}
+            <a class="pagination-link" href="{{ pagination.next_url }}" data-voucher-nav>Next</a>
+        {% else %}
+            <span class="pagination-disabled">Next</span>
+        {% endif %}
+    </div>
+</nav>
+
+<script>
+    (function () {
+        var filterForm = document.getElementById('voucher-filter-form');
+        var searchInput = document.getElementById('voucher-search');
+        var clearSearch = document.getElementById('voucher-search-clear');
+        var pageSize = document.getElementById('voucher-page-size');
+        var pageSizeValue = document.getElementById('voucher-page-size-value');
+        var results = document.getElementById('voucher-results');
+        var loading = document.getElementById('voucher-loading');
+        var selectAll = document.getElementById('select-all-vouchers');
+        var checkboxes = Array.prototype.slice.call(document.querySelectorAll('.voucher-select'));
+        var exportLinks = Array.prototype.slice.call(document.querySelectorAll('.export-link'));
+        var searchTimer;
+
+        function showLoading() {
+            if (loading) loading.hidden = false;
+            if (results) results.setAttribute('aria-busy', 'true');
+        }
+
+        function submitFilters() {
+            showLoading();
+            if (filterForm.requestSubmit) filterForm.requestSubmit();
+            else filterForm.submit();
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                clearSearch.hidden = !searchInput.value;
+                window.clearTimeout(searchTimer);
+                searchTimer = window.setTimeout(submitFilters, 300);
+            });
+        }
+
+        if (clearSearch) {
+            clearSearch.addEventListener('click', function () {
+                searchInput.value = '';
+                clearSearch.hidden = true;
+                window.clearTimeout(searchTimer);
+                submitFilters();
+            });
+        }
+
+        Array.prototype.slice.call(document.querySelectorAll('[data-auto-submit]')).forEach(function (control) {
+            control.addEventListener('change', submitFilters);
+        });
+
+        if (pageSize) {
+            var allowedSizes = ['10', '25', '50', '100'];
+            var storedSize = window.localStorage.getItem('karte.vouchers.pageSize');
+            var query = new URLSearchParams(window.location.search);
+            if (!query.has('per_page') && allowedSizes.indexOf(storedSize) !== -1 && storedSize !== pageSize.value) {
+                query.set('per_page', storedSize);
+                query.delete('page');
+                showLoading();
+                window.location.replace(window.location.pathname + '?' + query.toString());
+                return;
+            }
+            pageSize.addEventListener('change', function () {
+                pageSizeValue.value = pageSize.value;
+                window.localStorage.setItem('karte.vouchers.pageSize', pageSize.value);
+                submitFilters();
+            });
+        }
+
+        Array.prototype.slice.call(document.querySelectorAll('[data-voucher-nav]')).forEach(function (link) {
+            link.addEventListener('click', showLoading);
+        });
+
+        if (selectAll) {
+            selectAll.addEventListener('change', function () {
+                checkboxes.forEach(function (checkbox) {
+                    checkbox.checked = selectAll.checked;
+                });
+            });
+        }
+
+        exportLinks.forEach(function (link) {
+            link.addEventListener('click', function () {
+                var selected = checkboxes.filter(function (checkbox) {
+                    return checkbox.checked;
+                }).map(function (checkbox) {
+                    return checkbox.value;
+                });
+                var baseUrl = link.getAttribute('data-export-url');
+                if (!selected.length) {
+                    link.href = baseUrl;
+                    return;
+                }
+                var separator = baseUrl.indexOf('?') === -1 ? '?' : '&';
+                link.href = baseUrl + separator + 'ids=' + encodeURIComponent(selected.join(','));
+            });
+        });
+
+        function fallbackCopy(value) {
+            var field = document.createElement('textarea');
+            field.value = value;
+            field.style.position = 'fixed';
+            field.style.opacity = '0';
+            document.body.appendChild(field);
+            field.select();
+            document.execCommand('copy');
+            field.remove();
+        }
+
+        Array.prototype.slice.call(document.querySelectorAll('.copy-voucher-code')).forEach(function (button) {
+            button.addEventListener('click', function () {
+                var value = button.getAttribute('data-copy-code') || '';
+                var copied = window.navigator.clipboard && window.navigator.clipboard.writeText
+                    ? window.navigator.clipboard.writeText(value)
+                    : Promise.resolve(fallbackCopy(value));
+                copied.then(function () {
+                    var original = button.textContent;
+                    button.textContent = 'Copied';
+                    window.setTimeout(function () { button.textContent = original; }, 1200);
+                }).catch(function () { fallbackCopy(value); });
+            });
+        });
+
+        document.addEventListener('click', function (event) {
+            document.querySelectorAll('.voucher-action-menu[open]').forEach(function (menu) {
+                if (!menu.contains(event.target)) menu.removeAttribute('open');
+            });
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                document.querySelectorAll('.voucher-action-menu[open]').forEach(function (menu) {
+                    menu.removeAttribute('open');
+                });
+            }
+        });
+    })();
+</script>
 {% endblock %}

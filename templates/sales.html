@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Sales - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>Sales</h1>
+</section>
+
+<section class="metric-grid">
+    <div class="metric-tile">
+        <span>Today</span>
+        <strong>{{ summary.today_total }}</strong>
+    </div>
+    <div class="metric-tile">
+        <span>This Month</span>
+        <strong>{{ summary.month_total }}</strong>
+    </div>
+</section>
+
+{% if not sales %}
+    <div class="empty-state">
+        <h2>No sales recorded</h2>
+        <p class="text-muted mb-0">Use the Sell action on a voucher to record revenue.</p>
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table align-middle voucher-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Voucher</th>
+                    <th>Package</th>
+                    <th>Amount</th>
+                    <th>Payment</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sale in sales %}
+                    <tr>
+                        <td>{{ sale.timestamp }}</td>
+                        <td><code>{{ sale.username }}</code></td>
+                        <td>{{ sale.profile }}</td>
+                        <td>{{ sale.amount|money }}</td>
+                        <td>{{ sale.payment_method }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

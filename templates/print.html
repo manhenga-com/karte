@@ -41,6 +41,10 @@
                         <dd>{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</dd>
                     </div>
                     <div>
+                        <dt>Price</dt>
+                        <dd>{{ voucher.price|money }}</dd>
+                    </div>
+                    <div>
                         <dt>Data limit</dt>
                         <dd>{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</dd>
                     </div>
@@ -49,8 +53,8 @@
                         <dd>{{ voucher.shared_users or '1' }}</dd>
                     </div>
                     <div>
-                        <dt>Expiry</dt>
-                        <dd>{{ voucher.expiry_date or 'Manual' }}</dd>
+                        <dt>Validity</dt>
+                        <dd>{{ voucher.expires_at or voucher.expiry_date or 'Starts on first use' }}</dd>
                     </div>
                     {% if voucher.comment %}
                         <div>

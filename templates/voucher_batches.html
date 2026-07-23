@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Voucher Batches - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading with-action">
+    <h1>Voucher Batches</h1>
+    <a class="btn btn-primary" href="{{ url_for('bulk_vouchers') }}">Bulk Generate</a>
+</section>
+
+{% if not batches %}
+    <div class="empty-state">
+        <h2>No batches yet</h2>
+        <a class="btn btn-primary btn-lg" href="{{ url_for('bulk_vouchers') }}">Generate Batch</a>
+    </div>
+{% else %}
+    <div class="table-responsive">
+        <table class="table align-middle voucher-table">
+            <thead>
+                <tr>
+                    <th>Batch</th>
+                    <th>Package</th>
+                    <th>Prefix</th>
+                    <th>Quantity</th>
+                    <th>Pushed</th>
+                    <th>Failed</th>
+                    <th>Created</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for batch in batches %}
+                    <tr>
+                        <td class="fw-semibold">#{{ batch.id }}</td>
+                        <td>{{ batch.package_name or '-' }}</td>
+                        <td><code>{{ batch.prefix }}</code></td>
+                        <td>{{ batch.quantity }}</td>
+                        <td>{{ batch.pushed_count }}</td>
+                        <td>{{ batch.failed_count }}</td>
+                        <td>{{ batch.created_at }}</td>
+                        <td class="text-end">
+                            <a class="action-link action-neutral" href="{{ url_for('print_voucher_batch', batch_id=batch.id) }}">Print</a>
+                            <a class="action-link action-edit" href="{{ url_for('export_voucher_batch_pdf', batch_id=batch.id) }}">PDF</a>
+                            <a class="action-link action-neutral" href="{{ url_for('export_voucher_batch_csv', batch_id=batch.id) }}">CSV</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

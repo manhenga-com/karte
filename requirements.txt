@@ -1,3 +1,8 @@
 Flask>=3.0,<4
 routeros-api>=0.18,<1
-mysql-connector-python>=8.0,<10
+SQLAlchemy>=2.0,<3
+PyMySQL>=1.1,<2
+Alembic>=1.13,<2
+Flask-Migrate>=4.0,<5
+reportlab>=4.0,<6
+cryptography>=42,<46

@@ -1,52 +1,300 @@
 {% extends "base.html" %}
 
-{% block title %}Home - Karte RouterOS Management System{% endblock %}
+{% block title %}Dashboard - Karte RouterOS Management System{% endblock %}
 
 {% block content %}
-<section class="home-header">
-    <p class="eyebrow">RouterOS Management</p>
-    <h1 class="app-title-light">Karte RouterOS Management System</h1>
-    <p class="text-muted mb-0">
-        {% if active_router %}
-            {{ voucher_count }} saved voucher{{ '' if voucher_count == 1 else 's' }} on {{ active_router.name }}
-        {% else %}
-            Login to a router to start managing RouterOS
-        {% endif %}
-    </p>
+<section class="page-heading with-action dashboard-heading">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="text-muted mb-0">RouterOS hotspot sales, vouchers, and router activity at a glance.</p>
+    </div>
+    <div class="heading-actions">
+        <a class="btn btn-outline-secondary" href="{{ url_for('sales') }}">Sales</a>
+        <a class="btn btn-primary" href="{{ url_for('bulk_vouchers') }}">Bulk Generate</a>
+    </div>
 </section>
 
-<section class="home-grid">
-    <a class="home-tile tile-router" href="{{ url_for('routers') }}">
-        <span class="tile-icon">R</span>
-        <span>Routers</span>
-    </a>
-    <a class="home-tile tile-profiles" href="{{ url_for('hotspot_profiles') }}">
-        <span class="tile-icon">H</span>
-        <span>Hotspot Profiles</span>
-    </a>
-    <a class="home-tile tile-create" href="{{ url_for('create_voucher') }}">
-        <span class="tile-icon">+</span>
-        <span>Create Voucher</span>
-    </a>
-    <a class="home-tile tile-view" href="{{ url_for('vouchers') }}">
-        <span class="tile-icon">#</span>
-        <span>View Vouchers</span>
-    </a>
-    <a class="home-tile tile-active" href="{{ url_for('active_hotspot_users') }}">
-        <span class="tile-icon">O</span>
-        <span>Connected Users</span>
-    </a>
-    <a class="home-tile tile-print" href="{{ url_for('print_vouchers') }}">
-        <span class="tile-icon">P</span>
-        <span>Print Vouchers</span>
-    </a>
-    <a class="home-tile tile-script" href="{{ url_for('router_setup_script') }}">
-        <span class="tile-icon">S</span>
-        <span>Setup Script</span>
-    </a>
-    <a class="home-tile tile-settings" href="{{ url_for('settings') }}">
-        <span class="tile-icon">*</span>
-        <span>Router Settings</span>
-    </a>
+<section class="dashboard-kpis" aria-label="Key metrics">
+    <article class="dashboard-kpi primary">
+        <span>Today Sales</span>
+        <strong>{{ summary.today_sales or '0.00' }}</strong>
+        <small>{{ summary.today_target_percent or 0 }}% of daily target {{ summary.today_target or '0.00' }}</small>
+        <div class="kpi-gauge" aria-hidden="true">
+            <span style="width: {{ summary.today_target_percent or 0 }}%"></span>
+        </div>
+    </article>
+    <article class="dashboard-kpi">
+        <span>Month Sales</span>
+        <strong>{{ summary.month_sales or '0.00' }}</strong>
+        <small>Revenue recorded this month</small>
+    </article>
+    <article class="dashboard-kpi">
+        <span>Unused Vouchers</span>
+        <strong>{{ summary.vouchers_unused or 0 }}</strong>
+        <small>Available for sale</small>
+    </article>
+    <article class="dashboard-kpi">
+        <span>Active Vouchers</span>
+        <strong>{{ summary.vouchers_active or 0 }}</strong>
+        <small>Currently used or activated</small>
+    </article>
 </section>
+
+<section class="dashboard-section">
+    <div class="section-title">
+        <h2>Sales</h2>
+        <span>Last 14 days</span>
+    </div>
+    <div class="dashboard-chart-grid">
+        <article class="dashboard-chart-card wide">
+            <div class="chart-card-heading">
+                <div>
+                    <h3>Revenue Trend</h3>
+                    <p>Line graph, oldest to newest, y-axis starts at 0.</p>
+                </div>
+                <span id="revenuePeak" class="chart-note">No spike yet</span>
+            </div>
+            <div class="chart-box">
+                <canvas id="revenueTrendChart"></canvas>
+            </div>
+        </article>
+        <article class="dashboard-chart-card">
+            <div class="chart-card-heading">
+                <div>
+                    <h3>Cumulative Revenue</h3>
+                    <p>Area chart showing total movement over time.</p>
+                </div>
+            </div>
+            <div class="chart-box compact">
+                <canvas id="cumulativeRevenueChart"></canvas>
+            </div>
+        </article>
+    </div>
+</section>
+
+<section class="dashboard-section">
+    <div class="section-title">
+        <h2>Vouchers</h2>
+        <span>Stock, usage, and package mix</span>
+    </div>
+    <div class="dashboard-chart-grid three">
+        <article class="dashboard-chart-card">
+            <div class="chart-card-heading">
+                <div>
+                    <h3>Voucher Activity</h3>
+                    <p>Created vs sold over time.</p>
+                </div>
+            </div>
+            <div class="chart-box compact">
+                <canvas id="voucherActivityChart"></canvas>
+            </div>
+        </article>
+        <article class="dashboard-chart-card">
+            <div class="chart-card-heading">
+                <div>
+                    <h3>Voucher Status</h3>
+                    <p>Category comparison at this point in time.</p>
+                </div>
+            </div>
+            <div class="chart-box compact">
+                <canvas id="voucherStatusChart"></canvas>
+            </div>
+        </article>
+        <article class="dashboard-chart-card">
+            <div class="chart-card-heading">
+                <div>
+                    <h3>Top Packages</h3>
+                    <p>Donut chart shown only for up to five categories.</p>
+                </div>
+            </div>
+            <div class="chart-box compact">
+                <canvas id="packageMixChart"></canvas>
+            </div>
+            <p id="packageMixEmpty" class="empty-chart-note">No package sales yet.</p>
+        </article>
+    </div>
+</section>
+
+{% if summary.low_stock %}
+    <section class="forti-card">
+        <h2>Low Stock</h2>
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Package</th>
+                        <th>Unused vouchers</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in summary.low_stock %}
+                        <tr>
+                            <td>{{ item.name }}</td>
+                            <td><span class="status-pill status-expired">{{ item.unused }}</span></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endif %}
+
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+    window.KARTE_DASHBOARD = {{ summary.charts | tojson }};
+</script>
+<script>
+    (function () {
+        const data = window.KARTE_DASHBOARD || {};
+        const colors = {
+            revenue: '#0073e6',
+            sales: '#3bb5b6',
+            created: '#64748b',
+            sold: '#0073e6',
+            unused: '#0ea5e9',
+            active: '#16a34a',
+            expired: '#dc2626',
+            removed: '#64748b',
+            disabled: '#f59e0b'
+        };
+
+        const baseOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { boxWidth: 12, boxHeight: 12, usePointStyle: true } },
+                tooltip: { enabled: true }
+            },
+            scales: {
+                x: { grid: { color: 'rgba(148, 163, 184, 0.16)' }, ticks: { maxRotation: 0, autoSkip: true } },
+                y: { beginAtZero: true, grid: { color: 'rgba(148, 163, 184, 0.18)' } }
+            }
+        };
+
+        function money(value) {
+            return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function renderCharts() {
+            if (!window.Chart) {
+                document.querySelectorAll('.chart-box').forEach(function (box) {
+                    box.innerHTML = '<div class="empty-chart-note">Charts could not be loaded.</div>';
+                });
+                return;
+            }
+
+            const revenue = data.sales_trend || {};
+            const peak = revenue.peak;
+            if (peak) {
+                document.getElementById('revenuePeak').textContent = 'Peak ' + peak.label + ': ' + money(peak.value);
+            }
+
+            new Chart(document.getElementById('revenueTrendChart'), {
+                type: 'line',
+                data: {
+                    labels: revenue.labels || [],
+                    datasets: [
+                        {
+                            label: 'Revenue',
+                            data: revenue.revenue || [],
+                            borderColor: colors.revenue,
+                            backgroundColor: 'rgba(0, 115, 230, 0.10)',
+                            pointRadius: (context) => peak && context.dataIndex === peak.index ? 5 : 2,
+                            pointHoverRadius: 5,
+                            tension: 0.28
+                        },
+                        {
+                            label: 'Sales Count',
+                            data: revenue.sales || [],
+                            borderColor: colors.sales,
+                            backgroundColor: 'rgba(59, 181, 182, 0.10)',
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            tension: 0.28
+                        }
+                    ]
+                },
+                options: baseOptions
+            });
+
+            const cumulative = data.cumulative_revenue || {};
+            new Chart(document.getElementById('cumulativeRevenueChart'), {
+                type: 'line',
+                data: {
+                    labels: cumulative.labels || [],
+                    datasets: [{
+                        label: 'Cumulative Revenue',
+                        data: cumulative.revenue || [],
+                        borderColor: colors.revenue,
+                        backgroundColor: 'rgba(0, 115, 230, 0.18)',
+                        fill: true,
+                        tension: 0.25,
+                        pointRadius: 2
+                    }]
+                },
+                options: baseOptions
+            });
+
+            const activity = data.voucher_activity || {};
+            new Chart(document.getElementById('voucherActivityChart'), {
+                type: 'bar',
+                data: {
+                    labels: activity.labels || [],
+                    datasets: [
+                        { label: 'Created', data: activity.created || [], backgroundColor: colors.created },
+                        { label: 'Sold', data: activity.sold || [], backgroundColor: colors.sold }
+                    ]
+                },
+                options: baseOptions
+            });
+
+            const status = data.voucher_status || {};
+            new Chart(document.getElementById('voucherStatusChart'), {
+                type: 'bar',
+                data: {
+                    labels: status.labels || [],
+                    datasets: [{
+                        label: 'Vouchers',
+                        data: status.values || [],
+                        backgroundColor: [colors.unused, colors.active, colors.expired, colors.removed, colors.disabled]
+                    }]
+                },
+                options: {
+                    ...baseOptions,
+                    plugins: { ...baseOptions.plugins, legend: { display: false } }
+                }
+            });
+
+            const packageMix = data.package_mix || {};
+            const emptyPackage = document.getElementById('packageMixEmpty');
+            if (packageMix.mode === 'donut' && (packageMix.labels || []).length > 0) {
+                emptyPackage.hidden = true;
+                new Chart(document.getElementById('packageMixChart'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: packageMix.labels,
+                        datasets: [{
+                            label: 'Revenue',
+                            data: packageMix.values || [],
+                            backgroundColor: ['#0073e6', '#3bb5b6', '#16a34a', '#f59e0b', '#64748b']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: baseOptions.plugins,
+                        cutout: '62%'
+                    }
+                });
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', renderCharts);
+        } else {
+            renderCharts();
+        }
+    })();
+</script>
 {% endblock %}

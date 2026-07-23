@@ -20,7 +20,8 @@
     ('5368709120', '5 GB')
 ] %}
 {% set user_options = ['1', '2', '3', '5'] %}
-{% set status_options = ['unused', 'activated', 'online', 'used', 'expired', 'deleted', 'disabled'] %}
+{% set status_options = ['unused', 'active', 'expired', 'removed', 'disabled'] %}
+{% set package_options = packages|default([]) %}
 {% set known_time_values = ['30m', '1h', '2h', '1d', '1w', '30d', '0s'] %}
 {% set known_data_values = ['', '524288000', '1073741824', '2147483648', '5368709120'] %}
 {% set selected_time = voucher.time_limit or '1h' %}
@@ -28,12 +29,30 @@
 {% set selected_data = voucher.data_limit or '' %}
 {% set selected_users = voucher.shared_users or '1' %}
 {% set selected_status = voucher.status or 'unused' %}
+{% set selected_package = voucher.package_id|string if voucher.package_id is defined and voucher.package_id else '' %}
 <section class="page-heading">
     <h1>{{ 'Edit' if mode == 'edit' else 'Create' }} Voucher</h1>
 </section>
 
 <form method="post" class="simple-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="row g-3">
+        <div class="col-12">
+            <label class="form-label" for="package_id">Package</label>
+            <select class="form-control form-control-lg" id="package_id" name="package_id">
+                <option value="">Manual voucher</option>
+                {% for package in package_options %}
+                    <option value="{{ package.id }}"
+                        data-profile="{{ package.name }}"
+                        data-time="{{ package.validity_period }}"
+                        data-price="{{ package.price|money }}"
+                        data-data="{{ package.data_cap|data_size if package.data_cap else '' }}"
+                        {% if selected_package == package.id|string %}selected{% endif %}>
+                        {{ package.name }} · {{ package.validity_period }} · {{ package.price|money }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
         <div class="col-md-6">
             <label class="form-label" for="username">Username</label>
             <input class="form-control form-control-lg" id="username" name="username" value="{{ voucher.username }}" required>
@@ -63,6 +82,10 @@
                     <option value="{{ value }}" {% if selected_time == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="price">Price</label>
+            <input class="form-control form-control-lg" id="price" name="price" type="number" min="0" step="0.01" value="{{ voucher.price|default('0.00')|money }}" required>
         </div>
         <div class="col-md-6">
             <label class="form-label" for="data_limit">Data limit</label>
@@ -109,4 +132,36 @@
         <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('vouchers') }}">Cancel</a>
     </div>
 </form>
+<script>
+    (function () {
+        var packageSelect = document.getElementById('package_id');
+        if (!packageSelect) {
+            return;
+        }
+        packageSelect.addEventListener('change', function () {
+            var option = packageSelect.options[packageSelect.selectedIndex];
+            if (!option || !option.value) {
+                return;
+            }
+            var profile = document.getElementById('profile');
+            var time = document.getElementById('time_limit');
+            var price = document.getElementById('price');
+            if (profile && option.dataset.profile) {
+                var found = Array.prototype.some.call(profile.options, function (item) {
+                    return item.value === option.dataset.profile;
+                });
+                if (!found) {
+                    profile.add(new Option(option.dataset.profile, option.dataset.profile, true, true), 0);
+                }
+                profile.value = option.dataset.profile;
+            }
+            if (time && option.dataset.time) {
+                time.value = option.dataset.time;
+            }
+            if (price && option.dataset.price) {
+                price.value = option.dataset.price;
+            }
+        });
+    })();
+</script>
 {% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Add' if mode == 'create' else 'Edit' }} User - Karte{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>{{ 'Add User' if mode == 'create' else 'Edit User' }}</h1>
+</section>
+
+<form method="post" class="simple-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="row g-3">
+        <div class="col-md-6">
+            <label class="form-label" for="username">Username</label>
+            <input class="form-control form-control-lg" id="username" name="username" value="{{ user.username }}" required>
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="password">Password</label>
+            <input class="form-control form-control-lg" id="password" name="password" type="password" minlength="10" {% if mode == 'create' %}required{% endif %}>
+            {% if mode == 'edit' %}<small class="text-muted">Leave blank to keep the current password.</small>{% endif %}
+        </div>
+        <div class="col-md-6">
+            <label class="form-label" for="role">Role</label>
+            <select class="form-control form-control-lg" id="role" name="role">
+                <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                <option value="cashier" {% if user.role == 'cashier' %}selected{% endif %}>Cashier</option>
+            </select>
+        </div>
+        <div class="col-md-6 d-flex align-items-end">
+            <label class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" name="active" value="1" {% if user.active|string == '1' %}checked{% endif %}>
+                <span class="form-check-label">Active account</span>
+            </label>
+        </div>
+    </div>
+    <div class="form-actions">
+        <button class="btn btn-primary btn-lg" type="submit">Save User</button>
+        <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('user_management') }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

@@ -7,8 +7,7 @@ Simple Flask app for managing MikroTik RouterOS routers, access users, setup scr
 ```text
 mikrotik-hotspot-vouchers-flask/
   app.py
-  .env.example
-  .env.production.example
+  .env
   requirements.txt
   requirements-vps.txt
   wsgi.py
@@ -17,6 +16,8 @@ mikrotik-hotspot-vouchers-flask/
       README.md
       install.sh
       karte-routeros.service
+      karte-routeros-sync.service
+      karte-routeros-sync.timer
       nginx.conf
   templates/
     base.html
@@ -168,6 +169,8 @@ MYSQL_PORT=3306
 MYSQL_DATABASE=mikrotik_vouchers
 MYSQL_USER=voucher_app
 MYSQL_PASSWORD=your_mysql_password
+KARTE_ADMIN_USERNAME=admin
+KARTE_ADMIN_PASSWORD=choose-a-strong-local-admin-password
 ENABLE_BACKGROUND_SYNC=1
 BACKGROUND_SYNC_SECONDS=300
 SECRET_KEY=make-this-a-long-random-secret
@@ -180,7 +183,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The app creates the MySQL tables automatically on first start.
+The app applies versioned Alembic migrations automatically on first start. Back up an existing database before the first start after an upgrade.
 
 If MySQL is not configured, the app uses local SQLite automatically.
 
@@ -209,9 +212,9 @@ sudo rsync -a --delete ./ /opt/karte-routeros/
 cd /opt/karte-routeros
 sudo bash deploy/ubuntu/install.sh
 sudo mysql < setup/mysql-setup.sql
-sudo cp .env.production.example .env
 sudo nano .env
 sudo systemctl enable --now karte-routeros
+sudo systemctl enable --now karte-routeros-sync.timer
 sudo systemctl reload nginx
 ```
 
@@ -222,35 +225,29 @@ APP_ENV=production
 DB_ENGINE=mysql
 MYSQL_PASSWORD=your_real_mysql_password
 SECRET_KEY=a-long-random-secret
+KARTE_ADMIN_USERNAME=admin
+KARTE_ADMIN_PASSWORD=a-strong-initial-admin-password
 TRUST_PROXY=1
 SESSION_COOKIE_SECURE=1
+ROUTER_ALLOWED_NETWORKS=10.10.10.0/24
+ROUTER_ALLOWED_PORTS=8728,8729
+ENABLE_BACKGROUND_SYNC=0
 ```
 
 The app validates production config on startup. If `APP_ENV=production` is set and MySQL, `SECRET_KEY`, or password values are missing/placeholders, Gunicorn exits with a clear error.
 
 See [deploy/ubuntu/README.md](deploy/ubuntu/README.md) for full VPS steps.
 
-## SaaS Mode
+## Login Modes
 
-The app now has a simple SaaS account layer:
+Karte first requires a local Admin or Cashier account. The first administrator is created from `KARTE_ADMIN_USERNAME` and `KARTE_ADMIN_PASSWORD` in production, or through `/account/setup` during local development.
 
-- Users create a Karte account with name, email, and password.
-- Each account only sees its own saved routers.
-- New accounts start on a 30-day free trial.
-- Free-trial accounts can add only 1 router.
-- Use **Upgrade** inside the app to increase the router limit manually.
-- RouterOS/WinBox-style router login still expires after 30 minutes.
-- Routers and vouchers are isolated by the signed-in account.
-- The first registered account becomes the owner of any old local routers that existed before the SaaS upgrade.
+Administrators then use the separate Router Login page with the MikroTik IP/API credentials. Cashiers receive a session for the saved router without seeing router credentials and are limited to packages, vouchers, and sales.
 
-For a VPS SaaS install:
-
-1. Use MySQL by setting `DB_ENGINE=mysql` in `.env`.
-2. Set a strong `SECRET_KEY` in `.env`.
-3. Put the app behind HTTPS using Nginx, Caddy, Cloudflare Tunnel, or another reverse proxy.
-4. Use WireGuard between the VPS and each MikroTik router.
-5. Create one Karte account per customer or operator.
-6. Login to the customer account, then connect that customer's router using its WireGuard IP.
+- No account signup is required.
+- The router session expires after 30 minutes or when you click **Router Logout**.
+- Saved routers are available locally to this app installation.
+- For VPS use, connect to routers through WireGuard IP addresses.
 
 ## Run
 
@@ -277,34 +274,53 @@ If the batch file says the app is not installed yet, double-click `INSTALL.bat` 
 ## First Use
 
 1. Open the app.
-2. Click **Register** and create a Karte account.
-3. Login to the Karte account.
-4. Click **Router Login** or **Routers**.
-5. Add one or more MikroTik routers.
-6. Use **Save and Test Login** to confirm each router login.
-7. Select the router you want to work with.
-8. Click **Router Settings** if you need to edit the selected router.
-9. Click **Find RouterBOARD** to find and save the selected router IP automatically when possible.
-10. Enter:
+2. Enter the MikroTik router IP address, API port, username, and password.
+3. Click **Connect**.
+4. Use **Routers** to add or select saved routers.
+5. Use **Save and Test Login** to confirm each router login.
+6. Click **Router Settings** if you need to edit the selected router.
+7. Click **Find RouterBOARD** to find and save the selected router IP automatically when possible.
+8. Enter:
    - Router IP address, for example `192.168.88.1`
    - API port, usually `8728`
    - MikroTik username
    - MikroTik password
-11. Click **Save and Test**.
-12. Open **Profiles** to create Hotspot user profiles on the selected MikroTik router.
-13. Create vouchers using the exact Hotspot profile name that exists on the selected MikroTik router.
-14. Choose a voucher time limit from 30 Minutes, 1 Hour, 2 Hours, 1 Day, Weekly, Monthly, or Lifetime.
-15. Optional data limits include 500 MB, 1 GB, 2 GB, 5 GB, or Unlimited.
+9. Click **Save and Test**.
+10. Open **Packages** and create counter-staff packages such as `Day-5M`, `Weekly-10M`, or `Monthly-20M`.
+11. Open **Bulk Generate** to create voucher batches from those packages.
+12. Print the batch or export vouchers from **Vouchers**.
+13. Use **Sales** to review recorded voucher sales.
 
 ## Voucher Tracking
 
-The voucher dashboard keeps local history while syncing with the selected MikroTik router:
+The database is the source of truth for voucher lifecycle while syncing with the selected MikroTik router:
 
 - **Refresh Status** checks `/ip hotspot user` and `/ip hotspot active`.
-- Newly active vouchers are marked **Online** or **Activated** and store first login time, MAC address, IP address, and device name when available.
+- Newly active vouchers are marked **Active** and store first login time, MAC address, IP address, device name, and calculated `expires_at`.
+- The first MAC address is bound to the MikroTik hotspot user when RouterOS supports it.
 - Expired vouchers are removed from MikroTik and kept locally with status **Expired**.
-- Deleted vouchers are removed from MikroTik but kept locally with status **Deleted**.
-- The background sync runs automatically every 300 seconds by default. Use `BACKGROUND_SYNC_SECONDS` in `.env` to choose 60 to 300 seconds, or set `ENABLE_BACKGROUND_SYNC=0` to turn it off.
+- Removed vouchers are removed from MikroTik but kept locally with status **Removed**.
+- A voucher is not marked expired until RouterOS deletion is confirmed. Failed removals retain their RouterOS ID and are retried.
+- Terminal voucher codes that reappear after a router reboot are deleted again.
+- Router-only hotspot users are listed under **Unrecognized** for administrator review and are never automatically trusted or deleted.
+- Activated voucher codes cannot be renewed back to unused. Create a new voucher instead.
+- Local development can run sync in the Flask process. Production uses `karte-routeros-sync.timer` every 60 seconds so Gunicorn workers never duplicate the job.
+
+For VPS cron or a systemd timer, run the sync job explicitly:
+
+```bash
+cd /opt/karte-routeros
+./venv/bin/flask --app app sync-vouchers
+```
+
+Plain-text sync logs are written through the app logger. Set `LOG_LEVEL=INFO` in `.env` for normal operations.
+
+## Packages and Batches
+
+- **Packages** map 1:1 to MikroTik hotspot user profiles.
+- Package fields are name, speed limit, validity period, optional data cap, price, and archive status.
+- **Bulk Generate** supports up to 2,000 vouchers, configurable code alphabets, and direct batch PDF/CSV exports. Local development pushes immediately; production queues the vouchers for the next serialized sync timer run.
+- If a router is rebooted or a user is missing from RouterOS, sync recreates only **Unused** vouchers. Active, expired, and removed codes are never reset to unused.
 
 ## Multiple Routers
 
@@ -359,6 +375,6 @@ The installer creates Desktop and Start Menu shortcuts automatically.
 ## Notes
 
 - This app stores router settings and vouchers in SQLite by default, or MySQL when `DB_ENGINE=mysql` is set.
-- MikroTik passwords are stored in the selected local database. Keep the VPS and database private.
+- New installs encrypt MikroTik passwords when `cryptography` is installed. Keep the VPS and database private.
 - Keep this app on your own trusted Windows computer.
-- There is no online server, payment system, reports, SMS, WhatsApp, or complicated dashboard.
+- There is no SMS, WhatsApp, or complicated public payment system.

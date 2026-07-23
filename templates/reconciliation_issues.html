@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Unrecognized Entries - Karte RouterOS Management System{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <h1>Unrecognized Entries</h1>
+    <p class="text-muted mb-0">RouterOS hotspot users that have no matching voucher in Karte. Review only; Karte does not delete or trust them automatically.</p>
+</section>
+
+{% if not issues %}
+    <div class="empty-state">
+        <h2>No unrecognized entries</h2>
+        <p class="text-muted mb-0">The last reconciliation found no router-only hotspot users.</p>
+    </div>
+{% else %}
+    <div class="table-responsive voucher-table-wrap">
+        <table class="table align-middle voucher-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>RouterOS ID</th>
+                    <th>Details</th>
+                    <th>First seen</th>
+                    <th>Last seen</th>
+                    <th>Seen</th>
+                    <th>Status</th>
+                    <th class="text-end">Review</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for issue in issues %}
+                    <tr>
+                        <td data-label="User"><code>{{ issue.remote_name }}</code></td>
+                        <td data-label="RouterOS ID"><code>{{ issue.routeros_id or '-' }}</code></td>
+                        <td data-label="Details">{{ issue.details or '-' }}</td>
+                        <td data-label="First seen">{{ issue.first_seen_at }}</td>
+                        <td data-label="Last seen">{{ issue.last_seen_at }}</td>
+                        <td data-label="Seen">{{ issue.occurrence_count }}</td>
+                        <td data-label="Status">
+                            <span class="status-pill status-{{ 'active' if issue.status == 'open' else 'disabled' if issue.status == 'acknowledged' else 'removed' }}">
+                                {{ issue.status|title }}
+                            </span>
+                        </td>
+                        <td data-label="Review" class="text-end">
+                            <form method="post" action="{{ url_for('update_reconciliation_issue_status', issue_id=issue.id) }}" class="inline-form">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <select class="form-select form-select-sm d-inline-block w-auto" name="status" aria-label="Review status for {{ issue.remote_name }}">
+                                    {% for value, label in [('open', 'Open'), ('acknowledged', 'Acknowledged'), ('resolved', 'Resolved')] %}
+                                        <option value="{{ value }}" {% if issue.status == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="action-link action-edit" type="submit">Save</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+{% endblock %}

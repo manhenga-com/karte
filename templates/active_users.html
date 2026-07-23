@@ -51,6 +51,7 @@
                     <th>Idle</th>
                     <th>Server</th>
                     <th>Login By</th>
+                    <th class="text-end">Action</th>
                 </tr>
             </thead>
             <tbody>
@@ -68,6 +69,13 @@
                         <td>{{ user.idle_time }}</td>
                         <td>{{ user.server }}</td>
                         <td>{{ user.login_by }}</td>
+                        <td class="text-end">
+                            <form method="post" class="inline-form" action="{{ url_for('disconnect_active_hotspot_user') }}" onsubmit="return confirm('Disconnect this hotspot user?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <input type="hidden" name="username" value="{{ user.username }}">
+                                <button class="action-link action-danger" type="submit">Disconnect</button>
+                            </form>
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>
