@@ -92,6 +92,12 @@ class MySqlMigrationTests(unittest.TestCase):
             self.assertTrue(expected_tables.issubset(set(inspector.get_table_names())))
             voucher_columns = {column["name"] for column in inspector.get_columns("vouchers")}
             self.assertTrue({"last_error", "retry_count"}.issubset(voucher_columns))
+            login_columns = {
+                column["name"]
+                for column in inspector.get_columns("router_login_attempts")
+            }
+            self.assertIn("scope", login_columns)
+            self.assertNotIn("app_users", inspector.get_table_names())
 
             child_env = dict(env)
             child_env.update(

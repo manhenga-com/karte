@@ -26,6 +26,7 @@ class FakeRouterClient:
         self.delete_error = delete_error
         self.sticky_delete = sticky_delete
         self.tested = False
+        self.single_user_profiles = set()
 
     def test_connection(self):
         self.tested = True
@@ -75,6 +76,9 @@ class FakeRouterClient:
 
     def bind_voucher_to_mac(self, routeros_id, username, mac_address):
         return None
+
+    def enforce_single_user_profile(self, name):
+        self.single_user_profiles.add(name)
 
 
 class ProductionHardeningTests(unittest.TestCase):
@@ -166,6 +170,84 @@ class ProductionHardeningTests(unittest.TestCase):
             self.assertEqual(response.status_code, 302)
             self.assertIn("/login", response.headers["Location"])
 
+    def test_router_setup_script_is_public_without_exposing_saved_credentials(self):
+        self.router(password="never-expose-public-secret")
+
+        for path in ["/adopt-router", "/router-setup-script"]:
+            response = self.client.get(path, follow_redirects=False)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Adopt Router with WireGuard", response.data)
+            self.assertIn(b"karte-api", response.data)
+            self.assertNotIn(b"CHANGE-ME-STRONG-PASSWORD", response.data)
+            self.assertIn(b"/interface wireguard", response.data)
+            self.assertIn(b"Karte WireGuard API access", response.data)
+            self.assertNotIn(b"/ip hotspot", response.data)
+            self.assertNotIn(b"/ip dhcp-server", response.data)
+            self.assertNotIn(b"/ip firewall nat", response.data)
+            self.assertNotIn(b"never-expose-public-secret", response.data)
+
+    def test_account_login_links_to_public_router_adoption(self):
+        response = self.client.get("/account/login")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'href="/adopt-router"', response.data)
+
+    def test_account_login_is_rate_limited_separately(self):
+        token = self.csrf_token("/account/login")
+        with patch.dict(
+            os.environ,
+            {"LOGIN_MAX_ATTEMPTS": "3", "LOGIN_WINDOW_SECONDS": "300"},
+            clear=False,
+        ):
+            for _ in range(3):
+                response = self.client.post(
+                    "/account/login",
+                    data={
+                        "csrf_token": token,
+                        "username": "test-admin",
+                        "password": "wrong-password",
+                    },
+                )
+                self.assertEqual(response.status_code, 401)
+
+            response = self.client.post(
+                "/account/login",
+                data={
+                    "csrf_token": token,
+                    "username": "test-admin",
+                    "password": "wrong-password",
+                },
+            )
+
+        self.assertEqual(response.status_code, 429)
+        with closing(karte.get_db()) as db:
+            scopes = {
+                row["scope"]
+                for row in db.execute("SELECT DISTINCT scope FROM router_login_attempts").fetchall()
+            }
+        self.assertEqual(scopes, {"account"})
+
+    def test_router_adoption_uses_safe_env_defaults(self):
+        with patch.dict(
+            os.environ,
+            {
+                "KARTE_ADOPTION_SERVER_ENDPOINT": "vpn.example.test",
+                "KARTE_ADOPTION_SERVER_PUBLIC_KEY": "public-key-from-env",
+                "KARTE_ADOPTION_SERVER_ADDRESS": "10.44.0.1/32",
+                "KARTE_ADOPTION_ROUTER_ADDRESS": "10.44.0.2/32",
+                "KARTE_ADOPTION_API_USER": "karte-env-api",
+            },
+            clear=False,
+        ):
+            response = self.client.get("/adopt-router")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"vpn.example.test", response.data)
+        self.assertIn(b"public-key-from-env", response.data)
+        self.assertIn(b"10.44.0.1/32", response.data)
+        self.assertIn(b"10.44.0.2/32", response.data)
+        self.assertIn(b"karte-env-api", response.data)
+
     def test_login_page_never_renders_saved_router_password(self):
         router_id = self.router(password="never-render-this-secret")
         self.app_login()
@@ -215,7 +297,25 @@ class ProductionHardeningTests(unittest.TestCase):
         self.app_login("counter-one", "counter-password-123")
 
         self.assertEqual(self.client.get("/vouchers").status_code, 200)
-        self.assertEqual(self.client.get("/packages").status_code, 200)
+        package_page = self.client.get("/packages")
+        self.assertEqual(package_page.status_code, 200)
+        self.assertNotIn(b"Add Package", package_page.data)
+        csrf = re.search(rb'name="csrf_token" value="([^"]+)"', package_page.data)
+        self.assertIsNotNone(csrf)
+        response = self.client.post(
+            "/packages",
+            data={
+                "csrf_token": csrf.group(1).decode("ascii"),
+                "name": "Cashier Package",
+                "rate_limit": "5M/2M",
+                "validity_period": "1d",
+                "data_cap": "",
+                "price": "1.00",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        with closing(karte.get_db()) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM packages").fetchone()[0], 0)
         for path in ["/settings", "/routers", "/wireguard", "/reconciliation/issues", "/account/users"]:
             response = self.client.get(path)
             self.assertEqual(response.status_code, 302)
@@ -279,12 +379,130 @@ class ProductionHardeningTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             karte.record_sale(voucher_id, router_id, "1.00")
 
+    def test_router_with_history_cannot_be_deleted(self):
+        router_id = self.router()
+        karte.insert_package(
+            {
+                "name": "Keep-History",
+                "rate_limit": "",
+                "validity_period": "1d",
+                "data_cap": "",
+                "price": "1.00",
+                "archived": "0",
+            },
+            router_id,
+        )
+
+        with self.assertRaisesRegex(ValueError, "history"):
+            karte.delete_router(router_id)
+
+        self.assertIsNotNone(karte.get_router(router_id))
+
+    def test_failed_router_push_keeps_voucher_queued_in_database(self):
+        self.login()
+        with self.client.session_transaction() as browser_session:
+            token = browser_session["csrf_token"]
+        with (
+            patch.object(karte, "hotspot_profile_names", return_value=["one-day"]),
+            patch.object(karte.RouterClient, "create_voucher", side_effect=RuntimeError("router offline")),
+        ):
+            response = self.client.post(
+                "/vouchers/create",
+                data={
+                    "csrf_token": token,
+                    "username": "KT-QUEUED",
+                    "password": "secret",
+                    "profile": "one-day",
+                    "time_limit": "1d",
+                    "price": "1.00",
+                    "data_limit": "",
+                    "shared_users": "1",
+                    "expiry_date": "",
+                    "status": "unused",
+                    "comment": "",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        router = karte.find_router_by_login(
+            {
+                "router_ip": "192.168.88.1",
+                "api_port": "8728",
+                "router_username": "admin",
+            }
+        )
+        voucher = karte.get_voucher_by_username("KT-QUEUED", int(router["id"]))
+        self.assertIsNotNone(voucher)
+        self.assertEqual(voucher["status"], "unused")
+        self.assertEqual(voucher["routeros_id"], "")
+        self.assertEqual(voucher["retry_count"], 1)
+        self.assertIn("router offline", voucher["last_error"])
+
     def test_any_usage_evidence_permanently_retires_unused_code(self):
         voucher = {"status": "unused", "uptime_used": "", "data_used": ""}
         self.assertFalse(karte.voucher_has_usage_evidence(voucher))
         self.assertTrue(karte.voucher_has_usage_evidence(voucher, "2s", 0))
         self.assertTrue(karte.voucher_has_usage_evidence(voucher, "", 1))
         self.assertTrue(karte.voucher_has_usage_evidence({**voucher, "activated_at": "2026-01-01 00:00:00"}))
+
+    def test_used_voucher_cannot_be_edited_back_to_unused(self):
+        self.login()
+        router = karte.find_router_by_login(
+            {
+                "router_ip": "192.168.88.1",
+                "api_port": "8728",
+                "router_username": "admin",
+            }
+        )
+        voucher_id = karte.insert_voucher(
+            {
+                "username": "KT-USED",
+                "password": "secret",
+                "profile": "one-day",
+                "time_limit": "1d",
+                "price": "1.00",
+                "status": "used",
+                "activated_at": "2026-01-01 00:00:00",
+            },
+            int(router["id"]),
+        )
+        with self.client.session_transaction() as browser_session:
+            token = browser_session["csrf_token"]
+        with patch.object(karte, "hotspot_profile_names", return_value=["one-day"]):
+            response = self.client.post(
+                f"/vouchers/{voucher_id}/edit",
+                data={
+                    "csrf_token": token,
+                    "username": "KT-USED",
+                    "password": "secret",
+                    "profile": "one-day",
+                    "time_limit": "1d",
+                    "price": "1.00",
+                    "data_limit": "",
+                    "shared_users": "1",
+                    "expiry_date": "",
+                    "status": "unused",
+                    "comment": "",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(karte.get_voucher(voucher_id, int(router["id"]))["status"], "used")
+
+    def test_disabled_voucher_still_expires(self):
+        self.assertTrue(
+            karte.voucher_should_expire(
+                {
+                    "status": "disabled",
+                    "expires_at": "2000-01-01 00:00:00",
+                    "expiry_date": "",
+                    "time_limit": "0s",
+                    "data_limit": "",
+                },
+                "",
+                0,
+            )
+        )
 
     def test_bulk_validation_allows_more_than_one_thousand_codes(self):
         form = karte.default_voucher_batch()
@@ -430,6 +648,72 @@ class ProductionHardeningTests(unittest.TestCase):
                 (voucher_id,),
             ).fetchone()
         self.assertEqual(audit["action"], "terminal-remove")
+
+    def test_multiple_active_macs_are_disconnected_and_bound(self):
+        router_id = self.router()
+        voucher_id = karte.insert_voucher(
+            {
+                "username": "KT-ONE-DEVICE",
+                "password": "secret",
+                "profile": "one-day",
+                "time_limit": "1d",
+                "status": "unused",
+                "routeros_id": "*3",
+            },
+            router_id,
+        )
+        client = FakeRouterClient(
+            users=[{"id": "*3", "name": "KT-ONE-DEVICE", "disabled": "false"}],
+            active_users=[
+                {"id": "*a", "user": "KT-ONE-DEVICE", "mac-address": "AA:AA:AA:AA:AA:01", "uptime": "1m"},
+                {"id": "*b", "user": "KT-ONE-DEVICE", "mac-address": "AA:AA:AA:AA:AA:02", "uptime": "30s"},
+            ],
+        )
+
+        result = karte.sync_router_vouchers_with_client(karte.get_router(router_id), client)
+
+        voucher = karte.get_voucher(voucher_id, router_id)
+        self.assertEqual(result["online"], 0)
+        self.assertEqual(voucher["online_users"], 0)
+        self.assertEqual(voucher["first_login_mac"], "AA:AA:AA:AA:AA:01")
+        self.assertEqual(client.active_users, [])
+        self.assertEqual(client.single_user_profiles, {"one-day"})
+        with closing(karte.get_db()) as db:
+            blocked = db.execute(
+                "SELECT COUNT(*) FROM audit_logs WHERE entity_id = ? AND action = 'mac-block'",
+                (voucher_id,),
+            ).fetchone()[0]
+        self.assertEqual(blocked, 1)
+
+    def test_expired_router_sessions_are_purged(self):
+        router_id = self.router()
+        user = karte.get_user_by_username("test-admin")
+        now = karte.timestamp()
+        with closing(karte.get_db()) as db:
+            db.execute(
+                """
+                INSERT INTO router_sessions
+                    (token, user_id, router_id, router_ip, api_port, router_username, router_password, expires_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "expired-token",
+                    int(user["id"]),
+                    router_id,
+                    "192.168.88.1",
+                    "8728",
+                    "admin",
+                    karte.encrypt_secret("secret"),
+                    1,
+                    now,
+                    now,
+                ),
+            )
+            db.commit()
+
+        self.assertEqual(karte.purge_expired_router_sessions(), 1)
+        with closing(karte.get_db()) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM router_sessions").fetchone()[0], 0)
 
     def test_unrecognized_router_user_is_flagged_for_review(self):
         router_id = self.router()

@@ -10,7 +10,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 apt update
-apt install -y python3 python3-venv python3-pip nginx mysql-server
+apt install -y python3 python3-venv python3-pip nginx mysql-server certbot python3-certbot-nginx
 
 id "${APP_USER}" >/dev/null 2>&1 || useradd --system --home "${APP_DIR}" --shell /usr/sbin/nologin "${APP_USER}"
 mkdir -p "${APP_DIR}"
@@ -48,6 +48,8 @@ echo "1. Edit ${APP_DIR}/.env"
 echo "2. Create the MySQL database/user using setup/mysql-setup.sql or your own secure password"
 echo "3. Back up an existing database"
 echo "4. Run: sudo -u ${APP_USER} ${APP_DIR}/venv/bin/alembic -c ${APP_DIR}/alembic.ini upgrade head"
-echo "5. Run: sudo systemctl enable --now karte-routeros"
-echo "6. Run: sudo systemctl enable --now karte-routeros-sync.timer"
-echo "7. Run: sudo systemctl reload nginx"
+echo "5. Run: sudo -u ${APP_USER} ${APP_DIR}/venv/bin/flask --app app deployment-check"
+echo "6. Enable HTTPS: sudo certbot --nginx --redirect -d your-domain.example"
+echo "7. Run: sudo systemctl enable --now karte-routeros"
+echo "8. Run: sudo systemctl enable --now karte-routeros-sync.timer"
+echo "9. Run: sudo systemctl reload nginx"

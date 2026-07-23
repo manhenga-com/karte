@@ -24,6 +24,7 @@
                 <a class="{% if request.endpoint in ['voucher_batches', 'print_voucher_batch'] %}active{% endif %}" href="{{ url_for('voucher_batches') }}">Batches</a>
                 <a class="{% if request.endpoint in ['vouchers', 'voucher_details', 'edit_voucher', 'create_voucher'] %}active{% endif %}" href="{{ url_for('vouchers') }}">Vouchers</a>
                 <a class="{% if request.endpoint == 'sales' %}active{% endif %}" href="{{ url_for('sales') }}">Sales</a>
+                <a class="{% if request.endpoint == 'router_setup_script' %}active{% endif %}" href="{{ url_for('router_setup_script') }}">Setup Script</a>
                 {% if current_user and current_user.is_admin %}
                     <span>Administration</span>
                     <a class="{% if request.endpoint in ['routers', 'routers_add', 'routers_edit'] %}active{% endif %}" href="{{ url_for('routers') }}">Routers</a>
@@ -31,7 +32,6 @@
                     <a class="{% if request.endpoint in ['reconciliation_issues', 'update_reconciliation_issue_status'] %}active{% endif %}" href="{{ url_for('reconciliation_issues') }}">Unrecognized</a>
                     <a class="{% if request.endpoint == 'login' %}active{% endif %}" href="{{ url_for('login') }}">Router Login</a>
                     <a class="{% if request.endpoint == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">Router Settings</a>
-                    <a class="{% if request.endpoint == 'router_setup_script' %}active{% endif %}" href="{{ url_for('router_setup_script') }}">Setup Script</a>
                     <a class="{% if request.endpoint in ['wireguard_interfaces', 'wireguard_interface_script'] %}active{% endif %}" href="{{ url_for('wireguard_interfaces') }}">WireGuard</a>
                     <a class="{% if request.endpoint in ['user_management', 'create_user', 'edit_user'] %}active{% endif %}" href="{{ url_for('user_management') }}">Users</a>
                 {% endif %}
@@ -66,7 +66,7 @@
             </header>
 
             <main class="forti-content">
-                {% if not active_router and request.endpoint != 'login' %}
+                {% if not active_router and request.endpoint not in ['login', 'router_setup_script'] %}
                     <div class="router-banner muted">
                         <span>No router session</span>
                         <a href="{{ url_for('login') }}">Login with router IP</a>

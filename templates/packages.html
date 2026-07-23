@@ -7,41 +7,43 @@
     <h1>Packages</h1>
 </section>
 
-<form method="post" class="simple-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="package-form-heading">
-        <h2>Add Package</h2>
-    </div>
-    <div class="package-form-grid">
-        <div>
-            <label class="form-label" for="name">Name</label>
-            <input class="form-control" id="name" name="name" value="{{ package.name }}" placeholder="Day-5M" required>
+{% if current_user and current_user.is_admin %}
+    <form method="post" class="simple-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="package-form-heading">
+            <h2>Add Package</h2>
         </div>
-        <div>
-            <label class="form-label" for="rate_limit">Speed down/up</label>
-            <input class="form-control" id="rate_limit" name="rate_limit" value="{{ package.rate_limit }}" placeholder="5M/2M">
+        <div class="package-form-grid">
+            <div>
+                <label class="form-label" for="name">Name</label>
+                <input class="form-control" id="name" name="name" value="{{ package.name }}" placeholder="Day-5M" required>
+            </div>
+            <div>
+                <label class="form-label" for="rate_limit">Speed down/up</label>
+                <input class="form-control" id="rate_limit" name="rate_limit" value="{{ package.rate_limit }}" placeholder="5M/2M">
+            </div>
+            <div>
+                <label class="form-label" for="validity_period">Validity</label>
+                <select class="form-control" id="validity_period" name="validity_period">
+                    {% for value, label in [('1h','1 Hour'),('1d','1 Day'),('1w','Weekly'),('30d','Monthly'),('0s','Lifetime')] %}
+                        <option value="{{ value }}" {% if package.validity_period == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="form-label" for="data_cap">Data cap</label>
+                <input class="form-control" id="data_cap" name="data_cap" value="{{ package.data_cap }}" placeholder="Unlimited">
+            </div>
+            <div>
+                <label class="form-label" for="price">Price</label>
+                <input class="form-control" id="price" name="price" type="number" min="0" step="0.01" value="{{ package.price }}">
+            </div>
+            <div class="package-form-submit">
+                <button class="btn btn-primary" type="submit">Add Package</button>
+            </div>
         </div>
-        <div>
-            <label class="form-label" for="validity_period">Validity</label>
-            <select class="form-control" id="validity_period" name="validity_period">
-                {% for value, label in [('1h','1 Hour'),('1d','1 Day'),('1w','Weekly'),('30d','Monthly'),('0s','Lifetime')] %}
-                    <option value="{{ value }}" {% if package.validity_period == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div>
-            <label class="form-label" for="data_cap">Data cap</label>
-            <input class="form-control" id="data_cap" name="data_cap" value="{{ package.data_cap }}" placeholder="Unlimited">
-        </div>
-        <div>
-            <label class="form-label" for="price">Price</label>
-            <input class="form-control" id="price" name="price" type="number" min="0" step="0.01" value="{{ package.price }}">
-        </div>
-        <div class="package-form-submit">
-            <button class="btn btn-primary" type="submit">Add Package</button>
-        </div>
-    </div>
-</form>
+    </form>
+{% endif %}
 
 <section class="page-heading package-list-heading">
     <h2>Saved Packages</h2>
@@ -67,7 +69,9 @@
                     <th scope="col" class="text-center">Active</th>
                     <th scope="col" class="text-center">Retired</th>
                     <th scope="col">Status</th>
-                    <th scope="col" class="text-end">Actions</th>
+                    {% if current_user and current_user.is_admin %}
+                        <th scope="col" class="text-end">Actions</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
@@ -88,15 +92,17 @@
                                 <span class="status-pill status-active">Active</span>
                             {% endif %}
                         </td>
-                        <td class="text-end actions-cell" data-label="Actions">
-                            <div class="action-group">
-                                <a class="action-link action-edit" href="{{ url_for('edit_package', package_id=package.id) }}">Edit</a>
-                                <form class="inline-form" method="post" action="{{ url_for('archive_package', package_id=package.id) }}">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button class="action-link action-neutral" type="submit">{{ 'Restore' if package.archived else 'Archive' }}</button>
-                                </form>
-                            </div>
-                        </td>
+                        {% if current_user and current_user.is_admin %}
+                            <td class="text-end actions-cell" data-label="Actions">
+                                <div class="action-group">
+                                    <a class="action-link action-edit" href="{{ url_for('edit_package', package_id=package.id) }}">Edit</a>
+                                    <form class="inline-form" method="post" action="{{ url_for('archive_package', package_id=package.id) }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button class="action-link action-neutral" type="submit">{{ 'Restore' if package.archived else 'Archive' }}</button>
+                                    </form>
+                                </div>
+                            </td>
+                        {% endif %}
                     </tr>
                 {% endfor %}
             </tbody>

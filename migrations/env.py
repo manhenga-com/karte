@@ -16,6 +16,14 @@ if config.config_file_name is not None:
 target_metadata = METADATA
 
 
+def include_schema_object(_object, _name, object_type, reflected, compare_to):
+    # Karte keeps a few proven operational indexes outside model metadata.
+    # Alembic should not propose dropping those indexes during drift checks.
+    if object_type == "index" and reflected and compare_to is None:
+        return False
+    return True
+
+
 def load_env_file() -> None:
     path = Path(__file__).resolve().parents[1] / ".env"
     if not path.exists():
@@ -47,7 +55,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        compare_type=True,
+        compare_type=False,
+        include_object=include_schema_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -59,7 +68,8 @@ def run_migrations_online() -> None:
         context.configure(
             connection=supplied_connection,
             target_metadata=target_metadata,
-            compare_type=True,
+            compare_type=False,
+            include_object=include_schema_object,
         )
         with context.begin_transaction():
             context.run_migrations()
@@ -75,7 +85,8 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            compare_type=True,
+            compare_type=False,
+            include_object=include_schema_object,
         )
         with context.begin_transaction():
             context.run_migrations()

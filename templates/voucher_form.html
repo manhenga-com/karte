@@ -19,15 +19,13 @@
     ('2147483648', '2 GB'),
     ('5368709120', '5 GB')
 ] %}
-{% set user_options = ['1', '2', '3', '5'] %}
-{% set status_options = ['unused', 'active', 'expired', 'removed', 'disabled'] %}
+{% set status_options = ['unused', 'disabled'] %}
 {% set package_options = packages|default([]) %}
 {% set known_time_values = ['30m', '1h', '2h', '1d', '1w', '30d', '0s'] %}
 {% set known_data_values = ['', '524288000', '1073741824', '2147483648', '5368709120'] %}
 {% set selected_time = voucher.time_limit or '1h' %}
 {% set selected_profile = voucher.profile or 'default' %}
 {% set selected_data = voucher.data_limit or '' %}
-{% set selected_users = voucher.shared_users or '1' %}
 {% set selected_status = voucher.status or 'unused' %}
 {% set selected_package = voucher.package_id|string if voucher.package_id is defined and voucher.package_id else '' %}
 <section class="page-heading">
@@ -99,28 +97,26 @@
             </select>
         </div>
         <div class="col-md-6">
-            <label class="form-label" for="shared_users">Users allowed</label>
-            <select class="form-control form-control-lg" id="shared_users" name="shared_users">
-                {% if selected_users not in user_options %}
-                    <option value="{{ selected_users }}" selected>{{ selected_users }}</option>
-                {% endif %}
-                {% for value in user_options %}
-                    <option value="{{ value }}" {% if selected_users == value %}selected{% endif %}>{{ value }}</option>
-                {% endfor %}
-            </select>
+            <label class="form-label" for="shared_users">Devices allowed</label>
+            <input type="hidden" id="shared_users" name="shared_users" value="1">
+            <input class="form-control form-control-lg" value="1 device" disabled>
         </div>
         <div class="col-md-6">
             <label class="form-label" for="expiry_date">Expiry date</label>
             <input class="form-control form-control-lg" id="expiry_date" name="expiry_date" type="datetime-local" value="{{ voucher.expiry_date }}">
         </div>
-        <div class="col-md-6">
-            <label class="form-label" for="status">Status</label>
-            <select class="form-control form-control-lg" id="status" name="status" required>
-                {% for value in status_options %}
-                    <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ value|title }}</option>
-                {% endfor %}
-            </select>
-        </div>
+        {% if mode == 'edit' %}
+            <div class="col-md-6">
+                <label class="form-label" for="status">Status</label>
+                <select class="form-control form-control-lg" id="status" name="status" required>
+                    {% for value in status_options %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ value|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        {% else %}
+            <input type="hidden" name="status" value="unused">
+        {% endif %}
         <div class="col-12">
             <label class="form-label" for="comment">Comment / notes</label>
             <textarea class="form-control form-control-lg" id="comment" name="comment" rows="3">{{ voucher.comment }}</textarea>

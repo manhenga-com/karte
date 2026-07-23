@@ -222,8 +222,9 @@ router_login_attempts = Table(
     "router_login_attempts",
     METADATA,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("scope", String(32), nullable=False, server_default=text("'router'")),
     Column("client_key", String(64), nullable=False),
     Column("attempted_at", Float, nullable=False),
     Column("success", Integer, nullable=False, server_default=text("0")),
-    Index("idx_router_login_attempts_client_time", "client_key", "attempted_at"),
+    Index("idx_router_login_attempts_scope_client_time", "scope", "client_key", "attempted_at"),
 )

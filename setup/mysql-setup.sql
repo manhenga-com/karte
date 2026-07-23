@@ -5,7 +5,8 @@ CREATE DATABASE IF NOT EXISTS mikrotik_vouchers
 CREATE USER IF NOT EXISTS 'voucher_app'@'localhost'
   IDENTIFIED BY 'change-this-password';
 
-GRANT ALL PRIVILEGES ON mikrotik_vouchers.*
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES
+  ON mikrotik_vouchers.*
   TO 'voucher_app'@'localhost';
 
 FLUSH PRIVILEGES;

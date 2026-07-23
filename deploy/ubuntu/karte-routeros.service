@@ -9,6 +9,7 @@ Group=www-data
 WorkingDirectory=/opt/karte-routeros
 EnvironmentFile=/opt/karte-routeros/.env
 Environment=ENABLE_BACKGROUND_SYNC=0
+ExecStartPre=/opt/karte-routeros/venv/bin/flask --app app deployment-check
 ExecStartPre=/opt/karte-routeros/venv/bin/flask --app app sync-vouchers
 ExecStart=/opt/karte-routeros/venv/bin/gunicorn "wsgi:app" --bind 127.0.0.1:8008 --worker-class gthread --workers 2 --threads 8 --timeout 90 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --access-logfile - --error-logfile -
 Restart=always

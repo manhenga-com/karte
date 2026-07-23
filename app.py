@@ -22,6 +22,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 from pathlib import Path
 
+import click
 from flask import Flask, Response, flash, g, has_request_context, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -72,6 +73,7 @@ def create_app() -> Flask:
     app.config["SESSION_REFRESH_EACH_REQUEST"] = False
     configure_http_settings(app)
     init_db()
+    purge_expired_router_sessions()
     ensure_bootstrap_admin()
     start_background_sync(app)
 
@@ -82,8 +84,13 @@ def create_app() -> Flask:
         "healthz",
         "legacy_login_redirect",
         "manifest",
+        "router_setup_script",
         "service_worker",
         "static",
+    }
+    public_paths = {
+        "/adopt-router",
+        "/router-setup-script",
     }
 
     @app.before_request
@@ -96,7 +103,8 @@ def create_app() -> Flask:
 
     @app.before_request
     def require_app_and_router_login():
-        if request.endpoint in public_endpoints or request.endpoint is None:
+        request_path = request.path.rstrip("/") or "/"
+        if request.endpoint in public_endpoints or request_path in public_paths or request.endpoint is None:
             return None
 
         if not app_user_session_active():
@@ -194,10 +202,20 @@ def create_app() -> Flask:
 
         next_url = request.values.get("next", "")
         if request.method == "POST":
+            if login_rate_limited("account"):
+                flash("Too many failed login attempts. Wait a few minutes and try again.", "danger")
+                return render_template(
+                    "account_login.html",
+                    username=request.form.get("username", "").strip(),
+                    next_url=next_url,
+                    setup_available=user_count() == 0,
+                ), 429
+
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             user = get_user_by_username(username)
             if not user or not bool(int(row_value(user, "active", "0"))) or not check_password_hash(row_value(user, "password_hash"), password):
+                record_login_attempt("account", False)
                 flash("Incorrect username or password.", "danger")
                 return render_template(
                     "account_login.html",
@@ -206,6 +224,7 @@ def create_app() -> Flask:
                     setup_available=user_count() == 0,
                 ), 401
 
+            clear_login_attempts("account")
             start_app_session(user)
             update_user_last_login(int(user["id"]))
             destination = safe_next_url(next_url)
@@ -532,18 +551,22 @@ def create_app() -> Flask:
             flash("Router not found.", "warning")
             return redirect(url_for("routers"))
 
-        delete_router(router_id)
+        try:
+            delete_router(router_id)
+        except ValueError as exc:
+            flash(str(exc), "warning")
+            return redirect(url_for("routers"))
         if session.get("router_id") == router_id:
             clear_router_session()
         flash(f"Deleted router {router['name']}.", "success")
         return redirect(url_for("routers"))
 
     @app.route("/router-setup-script", methods=["GET", "POST"])
-    @admin_required
+    @app.route("/adopt-router", methods=["GET", "POST"])
     def router_setup_script():
-        active_router = get_active_router()
-        settings_data = active_router_settings(active_router) if active_router else get_settings()
-        options = router_setup_options_from_request(settings_data)
+        # This page is intentionally public. Never prefill it from saved router
+        # records because those credentials belong behind the authenticated UI.
+        options = router_setup_options_from_request({})
         script = build_router_setup_script(options)
         return render_template("router_setup_script.html", options=options, script=script)
 
@@ -632,6 +655,10 @@ def create_app() -> Flask:
         package = package_from_form() if request.method == "POST" else default_package()
 
         if request.method == "POST":
+            user = current_user()
+            if not user or row_value(user, "role") != "admin":
+                flash("Administrator access is required.", "danger")
+                return redirect(url_for("packages"))
             error = validate_package(package)
             if error:
                 flash(error, "danger")
@@ -648,6 +675,7 @@ def create_app() -> Flask:
         return render_template("packages.html", packages=list_packages(int(router["id"]), include_archived=True), package=package)
 
     @app.route("/packages/<int:package_id>/edit", methods=["GET", "POST"])
+    @admin_required
     def edit_package(package_id: int):
         router = require_active_router()
         if not router:
@@ -677,6 +705,7 @@ def create_app() -> Flask:
         return render_template("package_form.html", package=package)
 
     @app.post("/packages/<int:package_id>/archive")
+    @admin_required
     def archive_package(package_id: int):
         router = require_active_router()
         if not router:
@@ -1020,6 +1049,7 @@ def create_app() -> Flask:
 
         if request.method == "POST":
             data = voucher_from_form()
+            data["status"] = "unused"
             if data.get("package_id"):
                 package = get_package(parse_positive_int(data["package_id"], 0), int(router["id"]))
                 if package:
@@ -1033,16 +1063,27 @@ def create_app() -> Flask:
                 flash("This router already has a local voucher with this username.", "danger")
                 return render_template("voucher_form.html", voucher=data, mode="create", profile_names=profile_names, packages=packages_for_form)
 
+            data["routeros_id"] = ""
             try:
-                routeros_id = RouterClient(active_router_settings(router)).create_voucher(data)
-                data["routeros_id"] = routeros_id or ""
                 voucher_id = insert_voucher(data, router["id"])
-                audit_log(current_user_id(), int(router["id"]), "voucher", voucher_id, "create", f"Voucher {data['username']} created")
             except Exception as exc:
-                flash(f"Could not create voucher on MikroTik router: {exc}", "danger")
+                LOGGER.warning("voucher database create failed router=%s voucher=%s error=%s", router["id"], data["username"], exc)
+                flash(f"Could not save the voucher: {exc}", "danger")
                 return render_template("voucher_form.html", voucher=data, mode="create", profile_names=profile_names, packages=packages_for_form)
 
-            flash("Voucher created on the MikroTik router.", "success")
+            audit_log(current_user_id(), int(router["id"]), "voucher", voucher_id, "create", f"Voucher {data['username']} created")
+            try:
+                routeros_id = RouterClient(active_router_settings(router)).create_voucher(data)
+                update_voucher_sync_fields(
+                    voucher_id,
+                    int(router["id"]),
+                    {"routeros_id": routeros_id or "", "last_error": "", "retry_count": 0},
+                )
+                flash("Voucher created on the MikroTik router.", "success")
+            except Exception as exc:
+                record_voucher_sync_failure(voucher_id, int(router["id"]), exc, "")
+                LOGGER.warning("voucher queued for router sync router=%s voucher=%s error=%s", router["id"], data["username"], exc)
+                flash("Voucher saved. The router is unavailable, so Karte queued it for the next sync.", "warning")
             return redirect(url_for("print_vouchers", voucher_id=voucher_id))
 
         voucher = {
@@ -1092,7 +1133,15 @@ def create_app() -> Flask:
         packages_for_form = list_packages(int(router["id"]), include_archived=True)
 
         if request.method == "POST":
-            if row_value(voucher, "activated_at") or row_value(voucher, "status") in ["active", "expired", "removed", "deleted"]:
+            if (
+                voucher_has_usage_evidence(voucher)
+                or voucher_should_expire(
+                    voucher,
+                    row_value(voucher, "uptime_used"),
+                    parse_int(row_value(voucher, "data_used")),
+                )
+                or row_value(voucher, "status") in ["active", "used", "expired", "removed", "deleted"]
+            ):
                 flash("This voucher has already entered its lifecycle and cannot be reused or reset. Create a new voucher instead.", "warning")
                 return redirect(url_for("voucher_details", voucher_id=voucher_id))
             data = voucher_from_form()
@@ -1238,6 +1287,15 @@ def create_app() -> Flask:
             f"checked={summary['checked']} online={summary['online']} expired={summary['expired']} routers={summary['routers']}"
         )
 
+    @app.cli.command("deployment-check")
+    def deployment_check_command():
+        errors = deployment_check_errors()
+        if errors:
+            for error in errors:
+                click.echo(f"ERROR: {error}", err=True)
+            raise click.ClickException(f"deployment check failed with {len(errors)} error(s)")
+        click.echo("Deployment check passed.")
+
     return app
 
 
@@ -1298,6 +1356,12 @@ def validate_startup_config() -> None:
     if not is_production():
         return
 
+    errors = production_config_errors()
+    if errors:
+        raise RuntimeError("Production configuration error: " + " ".join(errors))
+
+
+def production_config_errors() -> list[str]:
     errors = []
     secret_key = os.environ.get("SECRET_KEY", "").strip()
     placeholder_secret_keys = {
@@ -1329,11 +1393,53 @@ def validate_startup_config() -> None:
     if os.environ.get("MYSQL_PASSWORD", "").strip() in {"change-this-password", "your_mysql_password"}:
         errors.append("Set MYSQL_PASSWORD to the real MySQL password.")
 
+    if not os.environ.get("ROUTER_ALLOWED_NETWORKS", "").strip():
+        errors.append("Set ROUTER_ALLOWED_NETWORKS explicitly; production must not use the broad development defaults.")
     if not allowed_router_networks():
         errors.append("Set ROUTER_ALLOWED_NETWORKS to the private WireGuard/LAN ranges used by your routers.")
+    if not os.environ.get("ROUTER_ALLOWED_PORTS", "").strip():
+        errors.append("Set ROUTER_ALLOWED_PORTS explicitly, normally to 8728,8729.")
+    if not allowed_router_api_ports():
+        errors.append("Set ROUTER_ALLOWED_PORTS to at least one valid RouterOS API port.")
 
-    if errors:
-        raise RuntimeError("Production configuration error: " + " ".join(errors))
+    return errors
+
+
+def deployment_check_errors() -> list[str]:
+    errors = []
+    if not is_production():
+        errors.append("Set APP_ENV=production.")
+    errors.extend(production_config_errors())
+
+    try:
+        purge_expired_router_sessions()
+        with closing(get_db()) as db:
+            active_admins = int(
+                db.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1").fetchone()[0]
+            )
+            if active_admins < 1:
+                errors.append("Create at least one active administrator account.")
+
+            plaintext_checks = [
+                ("routers", "router_password", "router credentials"),
+                ("router_sessions", "router_password", "router session credentials"),
+                ("wireguard_interfaces", "private_key", "WireGuard private keys"),
+            ]
+            for table, column, label in plaintext_checks:
+                row = db.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {column} <> '' AND {column} NOT LIKE 'enc:%'"
+                ).fetchone()
+                if int(row[0]):
+                    errors.append(f"Encrypt all stored {label} before deployment.")
+
+            if using_mysql():
+                revision = db.execute("SELECT version_num FROM alembic_version LIMIT 1").fetchone()
+                if not revision or row_value(revision, "version_num") != "20260723_02":
+                    errors.append("Run `flask --app app db upgrade` to apply the latest database migration.")
+    except Exception as exc:
+        errors.append(f"Database readiness check failed: {exc}")
+
+    return errors
 
 
 def configure_http_settings(app: Flask) -> None:
@@ -1387,6 +1493,7 @@ def session_minutes_left() -> int:
 
 def start_router_session(router_id: int, router) -> None:
     clear_router_session()
+    purge_expired_router_sessions()
     user_id = current_user_id()
     if not user_id:
         raise RuntimeError("Login with a router IP before connecting a router.")
@@ -1458,6 +1565,16 @@ def get_router_session() -> sqlite3.Row | None:
             return router_session
 
     return request_cached("router_session", load_router_session)
+
+
+def purge_expired_router_sessions() -> int:
+    with closing(get_db()) as db:
+        cursor = db.execute("DELETE FROM router_sessions WHERE expires_at <= ?", (time.time(),))
+        removed = int(getattr(cursor.cursor, "rowcount", 0)) if isinstance(cursor, MySqlCursor) else int(cursor.rowcount)
+        db.commit()
+    if removed:
+        LOGGER.info("purged expired router sessions count=%s", removed)
+    return removed
 
 
 def safe_next_url(next_url: str | None) -> str | None:
@@ -1703,34 +1820,53 @@ def login_rate_limit_settings() -> tuple[int, int]:
     return max(3, min(maximum, 20)), max(60, min(window, 3600))
 
 
-def router_login_rate_limited() -> bool:
+def login_rate_limited(scope: str) -> bool:
     maximum, window = login_rate_limit_settings()
     cutoff = time.time() - window
     client_key = login_attempt_client_key()
     with closing(get_db()) as db:
         row = db.execute(
-            "SELECT COUNT(*) AS attempt_count FROM router_login_attempts WHERE client_key = ? AND attempted_at >= ? AND success = 0",
-            (client_key, cutoff),
+            """
+            SELECT COUNT(*) AS attempt_count
+            FROM router_login_attempts
+            WHERE scope = ? AND client_key = ? AND attempted_at >= ? AND success = 0
+            """,
+            (scope, client_key, cutoff),
         ).fetchone()
     return parse_int(row_value(row, "attempt_count", "0")) >= maximum
 
 
-def record_router_login_attempt(success: bool) -> None:
+def record_login_attempt(scope: str, success: bool) -> None:
     client_key = login_attempt_client_key()
     _, window = login_rate_limit_settings()
     with closing(get_db()) as db:
         db.execute("DELETE FROM router_login_attempts WHERE attempted_at < ?", (time.time() - (window * 2),))
         db.execute(
-            "INSERT INTO router_login_attempts (client_key, attempted_at, success) VALUES (?, ?, ?)",
-            (client_key, time.time(), 1 if success else 0),
+            "INSERT INTO router_login_attempts (scope, client_key, attempted_at, success) VALUES (?, ?, ?, ?)",
+            (scope, client_key, time.time(), 1 if success else 0),
         )
         db.commit()
 
 
-def clear_router_login_attempts() -> None:
+def clear_login_attempts(scope: str) -> None:
     with closing(get_db()) as db:
-        db.execute("DELETE FROM router_login_attempts WHERE client_key = ?", (login_attempt_client_key(),))
+        db.execute(
+            "DELETE FROM router_login_attempts WHERE scope = ? AND client_key = ?",
+            (scope, login_attempt_client_key()),
+        )
         db.commit()
+
+
+def router_login_rate_limited() -> bool:
+    return login_rate_limited("router")
+
+
+def record_router_login_attempt(success: bool) -> None:
+    record_login_attempt("router", success)
+
+
+def clear_router_login_attempts() -> None:
+    clear_login_attempts("router")
 
 
 def save_login_router(router: dict[str, str]) -> int:
@@ -2118,6 +2254,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS router_login_attempts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope TEXT NOT NULL DEFAULT 'router',
                 client_key TEXT NOT NULL,
                 attempted_at REAL NOT NULL,
                 success INTEGER NOT NULL DEFAULT 0
@@ -2135,6 +2272,7 @@ def init_db() -> None:
         migrate_wireguard_schema(db)
         migrate_wireguard_secrets(db)
         migrate_legacy_secret_storage(db)
+        migrate_login_attempt_schema(db)
         assert_unique_voucher_data(db)
         db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_router_id ON vouchers(router_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status)")
@@ -2168,7 +2306,7 @@ def init_db() -> None:
         db.execute("CREATE INDEX IF NOT EXISTS idx_router_sessions_user_id ON router_sessions(user_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_router_sessions_expires_at ON router_sessions(expires_at)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_router_sessions_user_expires ON router_sessions(user_id, expires_at)")
-        db.execute("CREATE INDEX IF NOT EXISTS idx_router_login_attempts_client_time ON router_login_attempts(client_key, attempted_at)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_router_login_attempts_scope_client_time ON router_login_attempts(scope, client_key, attempted_at)")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users(username)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, active)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_wireguard_interface_name ON wireguard_interfaces(interface_name)")
@@ -2414,10 +2552,11 @@ def init_mysql_db(db) -> None:
         """
         CREATE TABLE IF NOT EXISTS router_login_attempts (
             id BIGINT PRIMARY KEY AUTO_INCREMENT,
+            scope VARCHAR(32) NOT NULL DEFAULT 'router',
             client_key CHAR(64) NOT NULL,
             attempted_at DOUBLE NOT NULL,
             success TINYINT NOT NULL DEFAULT 0,
-            INDEX idx_router_login_attempts_client_time (client_key, attempted_at)
+            INDEX idx_router_login_attempts_scope_client_time (scope, client_key, attempted_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
     )
@@ -2520,7 +2659,7 @@ def ensure_mysql_indexes(db) -> None:
         ("sales", "idx_sales_cashier_timestamp", "cashier_id, timestamp"),
         ("audit_logs", "idx_audit_router_created", "router_id, created_at"),
         ("router_sessions", "idx_router_sessions_user_expires", "user_id, expires_at"),
-        ("router_login_attempts", "idx_router_login_attempts_client_time", "client_key, attempted_at"),
+        ("router_login_attempts", "idx_router_login_attempts_scope_client_time", "scope, client_key, attempted_at"),
         ("wireguard_interfaces", "idx_wireguard_interface_name", "interface_name"),
         ("wireguard_interfaces", "idx_wireguard_created_at", "created_at"),
     ]
@@ -2972,6 +3111,11 @@ def table_columns(db: sqlite3.Connection, table: str) -> list[str]:
     return [row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()]
 
 
+def migrate_login_attempt_schema(db: sqlite3.Connection) -> None:
+    if "scope" not in table_columns(db, "router_login_attempts"):
+        db.execute("ALTER TABLE router_login_attempts ADD COLUMN scope TEXT NOT NULL DEFAULT 'router'")
+
+
 def first_router_id(db: sqlite3.Connection) -> int | None:
     row = db.execute("SELECT id FROM routers ORDER BY id LIMIT 1").fetchone()
     return int(row["id"]) if row else None
@@ -3265,10 +3409,17 @@ def delete_router(router_id: int) -> None:
         router = db.execute("SELECT id FROM routers WHERE id = ?", (router_id,)).fetchone()
         if not router:
             return
-        db.execute("DELETE FROM sales WHERE voucher_id IN (SELECT id FROM vouchers WHERE router_id = ?)", (router_id,))
-        db.execute("DELETE FROM vouchers WHERE router_id = ?", (router_id,))
-        db.execute("DELETE FROM voucher_batches WHERE router_id = ?", (router_id,))
-        db.execute("DELETE FROM packages WHERE router_id = ?", (router_id,))
+        history = db.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM vouchers WHERE router_id = ?) AS vouchers,
+                (SELECT COUNT(*) FROM voucher_batches WHERE router_id = ?) AS batches,
+                (SELECT COUNT(*) FROM packages WHERE router_id = ?) AS packages
+            """,
+            (router_id, router_id, router_id),
+        ).fetchone()
+        if any(parse_int(row_value(history, key, "0")) for key in ("vouchers", "batches", "packages")):
+            raise ValueError("This router has package or voucher history and cannot be deleted.")
         db.execute("DELETE FROM routers WHERE id = ?", (router_id,))
         db.commit()
 
@@ -4106,6 +4257,15 @@ def low_stock_packages(router_id: int, threshold: int = 5) -> list[dict[str, obj
 
 
 def audit_log(actor_user_id: int | None, router_id: int | None, entity_type: str, entity_id: int | None, action: str, message: str = "") -> None:
+    LOGGER.info(
+        "audit actor=%s router=%s entity=%s:%s action=%s message=%s",
+        actor_user_id,
+        router_id,
+        entity_type,
+        entity_id,
+        action,
+        message,
+    )
     try:
         with closing(get_db()) as db:
             db.execute(
@@ -4796,6 +4956,7 @@ def voucher_expires_at_from_activation(voucher, activated_at_text: str) -> str:
 
 
 def sync_all_routers() -> dict[str, int]:
+    purge_expired_router_sessions()
     summary = {"routers": 0, "checked": 0, "online": 0, "expired": 0}
     for router in list_routers_for_sync():
         try:
@@ -4863,6 +5024,17 @@ def sync_router_vouchers_with_client(router, client: "RouterClient") -> dict[str
         username = str(active.get("user") or active.get("name") or "").strip()
         if username:
             active_by_name.setdefault(username, []).append(active)
+
+    for profile_name in sorted({row_value(voucher, "profile") for voucher in vouchers if row_value(voucher, "profile")}):
+        try:
+            client.enforce_single_user_profile(profile_name)
+        except Exception as exc:
+            LOGGER.warning(
+                "single-device profile enforcement failed router=%s profile=%s error=%s",
+                router_id,
+                profile_name,
+                exc,
+            )
 
     summary = {
         "checked": 0,
@@ -5018,15 +5190,35 @@ def sync_router_vouchers_with_client(router, client: "RouterClient") -> dict[str
             fields["expires_at"] = voucher_expires_at_from_activation(voucher, activated_at)
 
         if active_rows:
-            summary["online"] += 1
             first_active = active_rows[0]
             active_mac = str(first_active.get("mac-address", "")).strip()
             saved_mac = row_value(voucher, "first_login_mac")
-            if saved_mac and active_mac and active_mac != saved_mac:
+            active_macs = {
+                str(active.get("mac-address", "")).strip()
+                for active in active_rows
+                if str(active.get("mac-address", "")).strip()
+            }
+            conflicting_mac = bool(saved_mac and any(mac != saved_mac for mac in active_macs))
+            simultaneous_first_use = bool(not saved_mac and len(active_macs) > 1)
+            if conflicting_mac or simultaneous_first_use:
                 client.remove_active_hotspot_sessions(username)
                 fields["online_users"] = 0
-                audit_log(None, router_id, "voucher", voucher_id, "mac-block", f"Blocked reuse of {username} from MAC {active_mac}")
+                fields["first_login_mac"] = saved_mac or active_mac
+                if active_mac and not saved_mac:
+                    try:
+                        client.bind_voucher_to_mac(remote_id, username, active_mac)
+                    except Exception as exc:
+                        LOGGER.warning("voucher mac bind failed router=%s voucher=%s error=%s", router_id, username, exc)
+                audit_log(
+                    None,
+                    router_id,
+                    "voucher",
+                    voucher_id,
+                    "mac-block",
+                    f"Blocked simultaneous reuse of {username}; observed MACs={','.join(sorted(active_macs))}",
+                )
             else:
+                summary["online"] += 1
                 activated_at = row_value(voucher, "activated_at") or str(fields.get("activated_at") or timestamp())
                 fields["activated_at"] = activated_at
                 fields["expires_at"] = row_value(voucher, "expires_at") or voucher_expires_at_from_activation(voucher, activated_at)
@@ -5125,7 +5317,7 @@ def observed_activation_timestamp(voucher, remote: dict, active_rows: list[dict]
 
 def voucher_should_expire(voucher, uptime_used: str, data_used: int | None) -> bool:
     status = row_value(voucher, "status")
-    if status in ["removed", "deleted", "disabled"]:
+    if status in ["removed", "deleted"]:
         return False
     if status == "expired":
         return True
@@ -5281,8 +5473,11 @@ def validate_voucher(voucher: dict[str, str]) -> str | None:
         return "Please fill in all voucher fields."
     if parse_price(voucher.get("price")) is None:
         return "Voucher price must be a number and cannot be negative."
-    if voucher.get("shared_users") and not voucher["shared_users"].isdigit():
-        return "Users allowed must be a number."
+    if voucher.get("shared_users", "1") != "1":
+        return "Vouchers are limited to one device to prevent reuse."
+    expiry = parse_local_datetime(voucher.get("expiry_date", ""))
+    if expiry and expiry <= datetime.now():
+        return "Expiry date must be in the future."
     if voucher.get("status") not in VOUCHER_STATUSES:
         return "Choose a valid voucher status."
     return None
@@ -5589,27 +5784,25 @@ def active_hotspot_user_row(active: dict, remote: dict | None = None) -> dict[st
 
 def router_setup_options_from_request(settings: dict[str, str]) -> dict[str, str]:
     defaults = {
-        "connection_mode": "wireguard",
-        "wan_interface": "ether1",
-        "bridge_name": "hotspot-bridge",
-        "gateway_ip": "10.5.50.1",
-        "lan_address": "10.5.50.1/24",
-        "lan_network": "10.5.50.0/24",
-        "pool_range": "10.5.50.10-10.5.50.254",
-        "dns_name": "login.hotspot",
-        "api_port": settings.get("api_port") or "8728",
-        "api_user": settings.get("router_username") or "voucher-api",
-        "api_password": settings.get("router_password") or "CHANGE-ME-STRONG-PASSWORD",
-        "limit_api_to_wireguard": "yes",
-        "wg_interface": "voucher-wg",
-        "wg_router_address": "10.10.10.2/32",
-        "wg_listen_port": "13231",
-        "wg_mtu": "1420",
-        "wg_server_public_key": "PASTE_VPS_WIREGUARD_PUBLIC_KEY",
-        "wg_server_endpoint_address": "your-vps-public-ip",
-        "wg_server_endpoint_port": "51820",
-        "wg_server_allowed_address": "10.10.10.1/32",
-        "wg_persistent_keepalive": "25s",
+        "api_port": adoption_env("KARTE_ADOPTION_API_PORT", settings.get("api_port") or "8728"),
+        "api_user": adoption_env("KARTE_ADOPTION_API_USER", settings.get("router_username") or "karte-api"),
+        "api_password": settings.get("router_password") or secrets.token_urlsafe(18),
+        "limit_api_to_wireguard": adoption_env("KARTE_ADOPTION_LIMIT_API", "yes"),
+        "wg_interface": adoption_env("KARTE_ADOPTION_WG_INTERFACE", "karte-wg"),
+        "wg_router_address": adoption_env("KARTE_ADOPTION_ROUTER_ADDRESS", "10.10.10.2/32"),
+        "wg_listen_port": adoption_env("KARTE_ADOPTION_ROUTER_LISTEN_PORT", "13231"),
+        "wg_mtu": adoption_env("KARTE_ADOPTION_WG_MTU", "1420"),
+        "wg_server_public_key": adoption_env(
+            "KARTE_ADOPTION_SERVER_PUBLIC_KEY",
+            "PASTE_VPS_WIREGUARD_PUBLIC_KEY",
+        ),
+        "wg_server_endpoint_address": adoption_env(
+            "KARTE_ADOPTION_SERVER_ENDPOINT",
+            "your-vps-public-ip",
+        ),
+        "wg_server_endpoint_port": adoption_env("KARTE_ADOPTION_SERVER_PORT", "51820"),
+        "wg_server_allowed_address": adoption_env("KARTE_ADOPTION_SERVER_ADDRESS", "10.10.10.1/32"),
+        "wg_persistent_keepalive": adoption_env("KARTE_ADOPTION_KEEPALIVE", "25s"),
     }
 
     if request.method != "POST":
@@ -5621,45 +5814,33 @@ def router_setup_options_from_request(settings: dict[str, str]) -> dict[str, str
     }
 
 
+def adoption_env(name: str, fallback: str) -> str:
+    return os.environ.get(name, "").strip() or fallback
+
+
 def routeros_quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def build_router_setup_script(options: dict[str, str]) -> str:
     values = {key: routeros_quote(value) for key, value in options.items()}
-    use_wireguard = options.get("connection_mode") == "wireguard"
-    wireguard_section = build_wireguard_setup_section(options, values) if use_wireguard else ':put "WireGuard skipped. App is expected to reach this router on the local network."'
+    wireguard_section = build_wireguard_setup_section(options, values)
     api_limit_section = build_api_limit_section(options)
     done_message = (
-        f'Add this router in the VPS app using WireGuard IP {strip_cidr(options["wg_router_address"])}, '
-        f'API user {options["api_user"]}, and the API password from this page.'
-        if use_wireguard
-        else "Add this router in the app using its LAN IP address and API login."
+        f'Add this router in Karte using IP {strip_cidr(options["wg_router_address"])}, '
+        f'API port {options["api_port"]}, user {options["api_user"]}, and the API password from this page.'
     )
 
-    return f""":put "Karte RouterOS Management System setup started"
+    return f""":put "Karte router adoption started"
 
-# Assumption:
-# - {options['wan_interface']} is the internet/WAN port.
-# - Every other Ethernet port plus wireless/wifi interfaces will become hotspot.
-# Change the WAN port on the app page before copying if your internet cable uses another port.
-
-:local wan {values['wan_interface']}
-:local bridge {values['bridge_name']}
-:local gatewayIp {values['gateway_ip']}
-:local lanAddress {values['lan_address']}
-:local lanNetwork {values['lan_network']}
-:local poolRange {values['pool_range']}
-:local dnsName {values['dns_name']}
+# RouterOS 7 is required for WireGuard.
+# This adoption script preserves existing WAN, LAN, bridge, Wi-Fi,
+# DHCP, hotspot, NAT, and routing configuration.
 :local apiPort {values['api_port']}
 :local apiUser {values['api_user']}
 :local apiPassword {values['api_password']}
-:local apiGroup "voucher-api"
+:local apiGroup "karte-api"
 :local apiService "api"
-:local hotspotPool "hotspot-pool"
-:local dhcpName "hotspot-dhcp"
-:local hotspotName "voucher-hotspot"
-:local profileName "voucher-profile"
 
 :local wgInterface {values['wg_interface']}
 :local wgRouterAddress {values['wg_router_address']}
@@ -5671,113 +5852,29 @@ def build_router_setup_script(options: dict[str, str]) -> str:
 :local wgServerAllowedAddress {values['wg_server_allowed_address']}
 :local wgPersistentKeepalive {values['wg_persistent_keepalive']}
 
-:put "Creating hotspot bridge"
-:if ([:len [/interface bridge find name=$bridge]] = 0) do={{
-    /interface bridge add name=$bridge comment="Hotspot bridge for Karte RouterOS Management System"
-}}
-
-:put "Adding Ethernet ports to hotspot bridge, except WAN"
-:foreach i in=[/interface ethernet find] do={{
-    :local ifName [/interface ethernet get $i name]
-    :if ($ifName != $wan) do={{
-        :if ([:len [/interface bridge port find interface=$ifName]] = 0) do={{
-            /interface bridge port add bridge=$bridge interface=$ifName
-        }}
-    }}
-}}
-
-:put "Adding legacy wireless interfaces to hotspot bridge"
-:do {{
-    :foreach i in=[/interface wireless find] do={{
-        :local ifName [/interface wireless get $i name]
-        /interface wireless set $i disabled=no mode=ap-bridge
-        :if ([:len [/interface bridge port find interface=$ifName]] = 0) do={{
-            /interface bridge port add bridge=$bridge interface=$ifName
-        }}
-    }}
-}} on-error={{ :put "No legacy wireless interfaces found" }}
-
-:put "Adding WiFiWave2/wifi interfaces to hotspot bridge"
-:do {{
-    :foreach i in=[/interface wifi find] do={{
-        :local ifName [/interface wifi get $i name]
-        /interface wifi set $i disabled=no
-        :if ([:len [/interface bridge port find interface=$ifName]] = 0) do={{
-            /interface bridge port add bridge=$bridge interface=$ifName
-        }}
-    }}
-}} on-error={{ :put "No wifi interfaces found" }}
-
-:put "Setting hotspot bridge IP address"
-:if ([:len [/ip address find interface=$bridge address=$lanAddress]] = 0) do={{
-    /ip address add address=$lanAddress interface=$bridge comment="Hotspot LAN gateway"
-}}
-
-:put "Creating DHCP pool"
-:if ([:len [/ip pool find name=$hotspotPool]] = 0) do={{
-    /ip pool add name=$hotspotPool ranges=$poolRange
-}} else={{
-    /ip pool set [find name=$hotspotPool] ranges=$poolRange
-}}
-
-:put "Creating DHCP server"
-:if ([:len [/ip dhcp-server find name=$dhcpName]] = 0) do={{
-    /ip dhcp-server add name=$dhcpName interface=$bridge address-pool=$hotspotPool disabled=no
-}} else={{
-    /ip dhcp-server set [find name=$dhcpName] interface=$bridge address-pool=$hotspotPool disabled=no
-}}
-
-:if ([:len [/ip dhcp-server network find address=$lanNetwork]] = 0) do={{
-    /ip dhcp-server network add address=$lanNetwork gateway=$gatewayIp dns-server=$gatewayIp comment="Hotspot voucher network"
-}}
-
-:put "Enabling DNS for hotspot clients"
-/ip dns set allow-remote-requests=yes
-
-:put "Making WAN receive internet by DHCP if no DHCP client exists"
-:if ([:len [/ip dhcp-client find interface=$wan]] = 0) do={{
-    /ip dhcp-client add interface=$wan disabled=no use-peer-dns=yes use-peer-ntp=yes
-}} else={{
-    /ip dhcp-client enable [find interface=$wan]
-}}
-
-:put "Adding internet masquerade rule"
-:if ([:len [/ip firewall nat find chain=srcnat out-interface=$wan action=masquerade]] = 0) do={{
-    /ip firewall nat add chain=srcnat out-interface=$wan action=masquerade comment="Hotspot voucher internet masquerade"
-}}
-
-:put "Creating hotspot profile"
-:if ([:len [/ip hotspot profile find name=$profileName]] = 0) do={{
-    /ip hotspot profile add name=$profileName hotspot-address=$gatewayIp dns-name=$dnsName html-directory=hotspot
-}} else={{
-    /ip hotspot profile set [find name=$profileName] hotspot-address=$gatewayIp dns-name=$dnsName html-directory=hotspot
-}}
-
-:put "Creating hotspot server"
-:if ([:len [/ip hotspot find name=$hotspotName]] = 0) do={{
-    /ip hotspot add name=$hotspotName interface=$bridge address-pool=$hotspotPool profile=$profileName disabled=no
-}} else={{
-    /ip hotspot set [find name=$hotspotName] interface=$bridge address-pool=$hotspotPool profile=$profileName disabled=no
-}}
-
-:put "Configuring WireGuard for VPS-hosted app"
+:put "Creating Karte WireGuard management tunnel"
 {wireguard_section}
 
-:put "Enabling RouterOS API for Karte RouterOS Management System"
+:put "Enabling RouterOS API for Karte"
 /ip service set [find name=$apiService] disabled=no port=[:tonum $apiPort]
 {api_limit_section}
 
-:put "Creating API user for Karte RouterOS Management System"
+:put "Allowing Karte API traffic through the router firewall"
+:if ([:len [/ip firewall filter find comment="Karte WireGuard API access"]] = 0) do={{
+    /ip firewall filter add chain=input action=accept protocol=tcp in-interface=$wgInterface src-address=$wgServerAllowedAddress dst-port=[:tonum $apiPort] place-before=0 comment="Karte WireGuard API access"
+}}
+
+:put "Creating dedicated Karte API user"
 :if ([:len [/user group find name=$apiGroup]] = 0) do={{
     /user group add name=$apiGroup policy=read,write,api,test
 }}
 :if ([:len [/user find name=$apiUser]] = 0) do={{
-    /user add name=$apiUser password=$apiPassword group=$apiGroup comment="Karte RouterOS Management System API user"
+    /user add name=$apiUser password=$apiPassword group=$apiGroup comment="Karte API user"
 }} else={{
     /user set [find name=$apiUser] password=$apiPassword group=$apiGroup disabled=no
 }}
 
-:put "Karte RouterOS Management System setup finished"
+:put "Karte router adoption finished"
 :put "{routeros_quote(done_message)[1:-1]}"
 """
 
@@ -5818,7 +5915,7 @@ def build_wireguard_setup_section(options: dict[str, str], values: dict[str, str
 
 
 def build_api_limit_section(options: dict[str, str]) -> str:
-    if options.get("connection_mode") == "wireguard" and options.get("limit_api_to_wireguard") == "yes":
+    if options.get("limit_api_to_wireguard") == "yes":
         return "/ip service set [find name=$apiService] address=$wgServerAllowedAddress"
     return ':put "API is not limited to WireGuard by this script."'
 
@@ -6015,6 +6112,7 @@ class RouterClient:
         self.settings = settings
         self._api = None
         self._pool = None
+        self._single_user_profiles: set[str] = set()
         if has_request_context():
             clients = getattr(g, "router_clients", [])
             clients.append(self)
@@ -6088,6 +6186,20 @@ class RouterClient:
             return
         self.resource("/ip/hotspot/user/profile").add(**params)
 
+    def enforce_single_user_profile(self, name: str) -> None:
+        profile_name = str(name or "").strip()
+        if not profile_name or profile_name in self._single_user_profiles:
+            return
+        existing = self.find_hotspot_profile(profile_name)
+        if not existing or not routeros_item_id(existing):
+            raise RuntimeError(f"Hotspot profile {profile_name} was not found on the router.")
+        if str(existing.get("shared-users", "1")).strip() != "1":
+            self.resource("/ip/hotspot/user/profile").set(
+                id=routeros_item_id(existing),
+                **{"shared-users": "1"},
+            )
+        self._single_user_profiles.add(profile_name)
+
     def hotspot_profile_params(self, profile: dict[str, str]) -> dict[str, str]:
         params = {"name": profile["name"]}
         optional_fields = {
@@ -6105,11 +6217,13 @@ class RouterClient:
         return params
 
     def create_voucher(self, voucher: dict[str, str]) -> str:
+        self.enforce_single_user_profile(voucher["profile"])
         user_resource = self.resource("/ip/hotspot/user")
         user_resource.add(**self.voucher_params(voucher))
         return self.find_remote_id(voucher["username"]) or ""
 
     def update_voucher(self, routeros_id: str | None, old_username: str, voucher: dict[str, str]) -> str:
+        self.enforce_single_user_profile(voucher["profile"])
         remote = self.find_hotspot_user(routeros_id, old_username)
         if not remote or not routeros_item_id(remote):
             raise RuntimeError("The voucher was not found on the MikroTik router.")
