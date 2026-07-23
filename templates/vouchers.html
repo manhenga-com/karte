@@ -2,8 +2,8 @@
 
 {% block title %}Vouchers - Karte RouterOS Management System{% endblock %}
 
-{% macro sort_header(label, key, extra_class='', numeric=false) -%}
-    <th scope="col" class="{{ extra_class }}{{ ' text-end' if numeric else '' }}" aria-sort="{% if state.sort == key %}{{ 'ascending' if state.direction == 'asc' else 'descending' }}{% else %}none{% endif %}">
+{% macro sort_header(label, key, extra_class='') -%}
+    <th scope="col" class="{{ extra_class }}" aria-sort="{% if state.sort == key %}{{ 'ascending' if state.direction == 'asc' else 'descending' }}{% else %}none{% endif %}">
         <a class="voucher-sort-link" href="{{ sort_urls[key] }}" data-voucher-nav>
             <span>{{ label }}</span>
             <span class="sort-indicator" aria-hidden="true">
@@ -118,29 +118,6 @@
     {% endif %}
 </section>
 
-<div id="voucher-bulk-bar" class="voucher-bulk-bar" hidden role="toolbar" aria-label="Bulk voucher actions">
-    <span class="voucher-bulk-count"><strong id="voucher-bulk-count">0</strong> selected</span>
-    <div class="voucher-bulk-actions">
-        <form method="post" action="{{ url_for('sell_voucher_bulk') }}" id="voucher-bulk-sell-form">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="payment_method" value="Cash">
-            <input type="hidden" name="voucher_ids" class="voucher-bulk-ids">
-            <button class="btn btn-sm btn-outline-secondary action-use" type="submit">Sell selected</button>
-        </form>
-        <form method="post" action="{{ url_for('disable_voucher_bulk') }}" id="voucher-bulk-disable-form" onsubmit="return confirm('Disable the selected vouchers on the MikroTik router?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="voucher_ids" class="voucher-bulk-ids">
-            <button class="btn btn-sm btn-outline-secondary" type="submit">Disable selected</button>
-        </form>
-        <form method="post" action="{{ url_for('delete_voucher_bulk') }}" id="voucher-bulk-delete-form" onsubmit="return confirm('Remove the selected vouchers from the MikroTik router and keep local history?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="voucher_ids" class="voucher-bulk-ids">
-            <button class="btn btn-sm btn-outline-secondary action-danger" type="submit">Remove selected</button>
-        </form>
-        <button id="voucher-bulk-clear" class="btn btn-sm btn-link" type="button">Clear selection</button>
-    </div>
-</div>
-
 <div id="voucher-results" class="voucher-results" aria-live="polite">
     <div id="voucher-loading" class="voucher-loading" hidden>
         <span class="voucher-spinner" aria-hidden="true"></span>
@@ -170,10 +147,10 @@
                         {{ sort_header('Password', 'password', 'mobile-secondary') }}
                         {{ sort_header('Profile', 'profile') }}
                         {{ sort_header('Time', 'time', 'mobile-secondary') }}
-                        {{ sort_header('Price', 'price', '', true) }}
+                        {{ sort_header('Price', 'price', 'text-end') }}
                         {{ sort_header('Data', 'data', 'mobile-secondary') }}
-                        {{ sort_header('Users', 'users', 'mobile-secondary', true) }}
-                        {{ sort_header('Online', 'online', 'mobile-secondary', true) }}
+                        {{ sort_header('Users', 'users', 'mobile-secondary text-end') }}
+                        {{ sort_header('Online', 'online', 'mobile-secondary text-end') }}
                         {{ sort_header('Status', 'status') }}
                         {{ sort_header('Activated', 'activated', 'mobile-secondary') }}
                         {{ sort_header('Time Used', 'time_used', 'mobile-secondary') }}
@@ -188,7 +165,7 @@
                     {% for voucher in vouchers %}
                         <tr class="voucher-row status-row-{{ voucher.status or 'unused' }}">
                             <td class="select-column sticky-col" data-label="Select"><input class="form-check-input voucher-select" type="checkbox" value="{{ voucher.id }}" aria-label="Select voucher {{ voucher.username }}"></td>
-                            <td class="voucher-code-cell" data-label="Code">
+                            <td class="voucher-code-cell" data-label="Code" title="{{ voucher.username }}">
                                 <code>{{ voucher.username }}</code>
                                 <button class="voucher-inline-copy copy-voucher-code" type="button" data-copy-code="{{ voucher.username }}" aria-label="Copy code {{ voucher.username }}" title="Copy code">&#128203;</button>
                             </td>
@@ -196,7 +173,7 @@
                                 <code>{{ voucher.password }}</code>
                                 <button class="voucher-inline-copy copy-voucher-code" type="button" data-copy-code="{{ voucher.password }}" aria-label="Copy password for {{ voucher.username }}" title="Copy password">&#128203;</button>
                             </td>
-                            <td data-label="Profile">{{ voucher.profile }}</td>
+                            <td data-label="Profile" title="{{ voucher.profile }}">{{ voucher.profile }}</td>
                             <td class="mobile-secondary" data-label="Time">{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</td>
                             <td class="text-end" data-label="Price">{{ voucher.price|money }}</td>
                             <td class="mobile-secondary" data-label="Data">{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</td>
@@ -271,21 +248,59 @@
 </nav>
 
 <style>
-    /* --- Table readability & sticky-column additions --- */
-    .voucher-table-wrap { overflow-x: auto; }
-    .voucher-table thead th { position: sticky; top: 0; background: var(--surface, #fff); z-index: 2; }
-    .voucher-table tbody tr:nth-child(odd) { background: rgba(0,0,0,0.015); }
-    .voucher-table tbody tr:hover { background: rgba(13,110,253,0.06); }
-    .voucher-table .sticky-col { position: sticky; left: 0; background: inherit; z-index: 1; }
+    /* Visual/HCI-only additions — no behavior here, purely presentational */
+
+    .voucher-table-wrap { border: 1px solid #e5e7eb; border-radius: 10px; overflow-x: auto; }
+
+    /* Sticky header */
+    .voucher-table thead th {
+        position: sticky; top: 0; z-index: 2;
+        background: #fff;
+        white-space: nowrap;
+    }
+
+    /* Sticky select + actions columns, background tracks each row's own stripe/hover color */
+    .voucher-table tbody tr:nth-child(odd) { --row-bg: rgba(0,0,0,0.015); }
+    .voucher-table tbody tr:nth-child(even) { --row-bg: #ffffff; }
+    .voucher-table tbody tr:hover { --row-bg: rgba(13,110,253,0.06); }
+    .voucher-table tbody tr { background: var(--row-bg); transition: background-color 0.12s ease; }
+    .voucher-table .sticky-col { position: sticky; left: 0; background: var(--row-bg, #fff); z-index: 1; }
     .voucher-table .sticky-col-right { left: auto; right: 0; }
-    .voucher-table thead th.sticky-col { background: var(--surface, #fff); z-index: 3; }
-    .voucher-table .text-end { text-align: right; }
-    .voucher-inline-copy { border: none; background: none; cursor: pointer; padding: 0 2px; margin-left: 4px; opacity: 0.6; }
-    .voucher-inline-copy:hover { opacity: 1; }
-    .status-row-expired td, .status-row-disabled td { opacity: 0.65; }
-    .voucher-bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; margin-bottom: 12px; border-radius: 8px; background: #eef4ff; border: 1px solid #cfe0ff; }
-    .voucher-bulk-actions { display: flex; gap: 8px; align-items: center; }
-    .voucher-bulk-actions form { display: inline; }
+    .voucher-table thead th.sticky-col { background: #fff; z-index: 3; }
+
+    /* Numeric column alignment */
+    .voucher-table .text-end { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* Row density / readability */
+    .voucher-table td, .voucher-table th { padding-top: 0.65rem; padding-bottom: 0.65rem; }
+    .voucher-code-cell, td[data-label="Profile"] {
+        max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* De-emphasize inactive vouchers so active ones stand out */
+    .status-row-expired, .status-row-disabled { opacity: 0.6; }
+
+    /* Status pill colors */
+    .status-pill { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+    .status-pill.status-active { background: #e6f4ea; color: #1e7e34; }
+    .status-pill.status-unused { background: #eef1f5; color: #495057; }
+    .status-pill.status-used { background: #fff8e1; color: #8a6d00; }
+    .status-pill.status-expired { background: #fdecea; color: #b02a37; }
+    .status-pill.status-disabled { background: #f1f1f1; color: #6c757d; text-decoration: line-through; }
+
+    /* Inline copy affordance — reuses the existing .copy-voucher-code click handler, no script changes */
+    .voucher-inline-copy {
+        border: none; background: none; cursor: pointer; padding: 0 2px;
+        margin-left: 4px; opacity: 0.55; font-size: 0.85em;
+    }
+    .voucher-inline-copy:hover, .voucher-inline-copy:focus-visible { opacity: 1; }
+
+    /* Clearer keyboard focus, since dense tables are easy to lose track of when tabbing */
+    .voucher-table a:focus-visible,
+    .voucher-table button:focus-visible,
+    .voucher-table input:focus-visible {
+        outline: 2px solid #0d6efd; outline-offset: 2px;
+    }
 </style>
 
 <script>
@@ -300,10 +315,6 @@
         var selectAll = document.getElementById('select-all-vouchers');
         var checkboxes = Array.prototype.slice.call(document.querySelectorAll('.voucher-select'));
         var exportLinks = Array.prototype.slice.call(document.querySelectorAll('.export-link'));
-        var bulkBar = document.getElementById('voucher-bulk-bar');
-        var bulkCount = document.getElementById('voucher-bulk-count');
-        var bulkClear = document.getElementById('voucher-bulk-clear');
-        var bulkIdFields = Array.prototype.slice.call(document.querySelectorAll('.voucher-bulk-ids'));
         var searchTimer;
 
         function showLoading() {
@@ -360,36 +371,11 @@
             link.addEventListener('click', showLoading);
         });
 
-        function updateBulkBar() {
-            var selected = checkboxes.filter(function (checkbox) { return checkbox.checked; });
-            if (!bulkBar) return;
-            bulkBar.hidden = selected.length === 0;
-            if (bulkCount) bulkCount.textContent = selected.length;
-            var ids = selected.map(function (checkbox) { return checkbox.value; }).join(',');
-            bulkIdFields.forEach(function (field) { field.value = ids; });
-            if (selectAll) {
-                selectAll.checked = selected.length === checkboxes.length && checkboxes.length > 0;
-                selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
-            }
-        }
-
         if (selectAll) {
             selectAll.addEventListener('change', function () {
                 checkboxes.forEach(function (checkbox) {
                     checkbox.checked = selectAll.checked;
                 });
-                updateBulkBar();
-            });
-        }
-
-        checkboxes.forEach(function (checkbox) {
-            checkbox.addEventListener('change', updateBulkBar);
-        });
-
-        if (bulkClear) {
-            bulkClear.addEventListener('click', function () {
-                checkboxes.forEach(function (checkbox) { checkbox.checked = false; });
-                updateBulkBar();
             });
         }
 
@@ -448,8 +434,6 @@
                 });
             }
         });
-
-        updateBulkBar();
     })();
 </script>
 {% endblock %}
