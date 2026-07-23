@@ -2,8 +2,8 @@
 
 {% block title %}Vouchers - Karte RouterOS Management System{% endblock %}
 
-{% macro sort_header(label, key, extra_class='') -%}
-    <th class="{{ extra_class }}" aria-sort="{% if state.sort == key %}{{ 'ascending' if state.direction == 'asc' else 'descending' }}{% else %}none{% endif %}">
+{% macro sort_header(label, key, extra_class='', numeric=false) -%}
+    <th scope="col" class="{{ extra_class }}{{ ' text-end' if numeric else '' }}" aria-sort="{% if state.sort == key %}{{ 'ascending' if state.direction == 'asc' else 'descending' }}{% else %}none{% endif %}">
         <a class="voucher-sort-link" href="{{ sort_urls[key] }}" data-voucher-nav>
             <span>{{ label }}</span>
             <span class="sort-indicator" aria-hidden="true">
@@ -118,6 +118,29 @@
     {% endif %}
 </section>
 
+<div id="voucher-bulk-bar" class="voucher-bulk-bar" hidden role="toolbar" aria-label="Bulk voucher actions">
+    <span class="voucher-bulk-count"><strong id="voucher-bulk-count">0</strong> selected</span>
+    <div class="voucher-bulk-actions">
+        <form method="post" action="{{ url_for('sell_voucher_bulk') }}" id="voucher-bulk-sell-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="payment_method" value="Cash">
+            <input type="hidden" name="voucher_ids" class="voucher-bulk-ids">
+            <button class="btn btn-sm btn-outline-secondary action-use" type="submit">Sell selected</button>
+        </form>
+        <form method="post" action="{{ url_for('disable_voucher_bulk') }}" id="voucher-bulk-disable-form" onsubmit="return confirm('Disable the selected vouchers on the MikroTik router?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="voucher_ids" class="voucher-bulk-ids">
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Disable selected</button>
+        </form>
+        <form method="post" action="{{ url_for('delete_voucher_bulk') }}" id="voucher-bulk-delete-form" onsubmit="return confirm('Remove the selected vouchers from the MikroTik router and keep local history?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="voucher_ids" class="voucher-bulk-ids">
+            <button class="btn btn-sm btn-outline-secondary action-danger" type="submit">Remove selected</button>
+        </form>
+        <button id="voucher-bulk-clear" class="btn btn-sm btn-link" type="button">Clear selection</button>
+    </div>
+</div>
+
 <div id="voucher-results" class="voucher-results" aria-live="polite">
     <div id="voucher-loading" class="voucher-loading" hidden>
         <span class="voucher-spinner" aria-hidden="true"></span>
@@ -139,39 +162,46 @@
     {% else %}
         <div class="table-responsive voucher-table-wrap">
             <table class="table align-middle voucher-table">
+                <caption class="visually-hidden">Hotspot vouchers, sorted by {{ state.sort }} {{ state.direction }}</caption>
                 <thead>
                     <tr>
-                        <th class="select-column"><input class="form-check-input" type="checkbox" id="select-all-vouchers" aria-label="Select all vouchers"></th>
+                        <th scope="col" class="select-column sticky-col"><input class="form-check-input" type="checkbox" id="select-all-vouchers" aria-label="Select all vouchers"></th>
                         {{ sort_header('Code', 'code') }}
                         {{ sort_header('Password', 'password', 'mobile-secondary') }}
                         {{ sort_header('Profile', 'profile') }}
                         {{ sort_header('Time', 'time', 'mobile-secondary') }}
-                        {{ sort_header('Price', 'price') }}
+                        {{ sort_header('Price', 'price', '', true) }}
                         {{ sort_header('Data', 'data', 'mobile-secondary') }}
-                        {{ sort_header('Users', 'users', 'mobile-secondary') }}
-                        {{ sort_header('Online', 'online', 'mobile-secondary') }}
+                        {{ sort_header('Users', 'users', 'mobile-secondary', true) }}
+                        {{ sort_header('Online', 'online', 'mobile-secondary', true) }}
                         {{ sort_header('Status', 'status') }}
                         {{ sort_header('Activated', 'activated', 'mobile-secondary') }}
                         {{ sort_header('Time Used', 'time_used', 'mobile-secondary') }}
-                        <th class="mobile-secondary">Time Left</th>
+                        <th scope="col" class="mobile-secondary">Time Left</th>
                         {{ sort_header('Data Used', 'data_used', 'mobile-secondary') }}
-                        <th class="mobile-secondary">Data Left</th>
+                        <th scope="col" class="mobile-secondary">Data Left</th>
                         {{ sort_header('Expiry', 'expiry') }}
-                        <th class="actions-column"><span class="visually-hidden">Actions</span></th>
+                        <th scope="col" class="actions-column sticky-col sticky-col-right"><span class="visually-hidden">Actions</span></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for voucher in vouchers %}
-                        <tr>
-                            <td class="select-column" data-label="Select"><input class="form-check-input voucher-select" type="checkbox" value="{{ voucher.id }}" aria-label="Select voucher {{ voucher.username }}"></td>
-                            <td class="voucher-code-cell" data-label="Code"><code>{{ voucher.username }}</code></td>
-                            <td class="mobile-secondary" data-label="Password"><code>{{ voucher.password }}</code></td>
+                        <tr class="voucher-row status-row-{{ voucher.status or 'unused' }}">
+                            <td class="select-column sticky-col" data-label="Select"><input class="form-check-input voucher-select" type="checkbox" value="{{ voucher.id }}" aria-label="Select voucher {{ voucher.username }}"></td>
+                            <td class="voucher-code-cell" data-label="Code">
+                                <code>{{ voucher.username }}</code>
+                                <button class="voucher-inline-copy copy-voucher-code" type="button" data-copy-code="{{ voucher.username }}" aria-label="Copy code {{ voucher.username }}" title="Copy code">&#128203;</button>
+                            </td>
+                            <td class="mobile-secondary" data-label="Password">
+                                <code>{{ voucher.password }}</code>
+                                <button class="voucher-inline-copy copy-voucher-code" type="button" data-copy-code="{{ voucher.password }}" aria-label="Copy password for {{ voucher.username }}" title="Copy password">&#128203;</button>
+                            </td>
                             <td data-label="Profile">{{ voucher.profile }}</td>
                             <td class="mobile-secondary" data-label="Time">{{ time_labels.get(voucher.time_limit, voucher.time_limit) }}</td>
-                            <td data-label="Price">{{ voucher.price|money }}</td>
+                            <td class="text-end" data-label="Price">{{ voucher.price|money }}</td>
                             <td class="mobile-secondary" data-label="Data">{{ data_labels.get(voucher.data_limit, voucher.data_limit or 'Unlimited') }}</td>
-                            <td class="mobile-secondary" data-label="Users">{{ voucher.shared_users or '1' }}</td>
-                            <td class="mobile-secondary" data-label="Online">{{ voucher.online_users or 0 }}</td>
+                            <td class="mobile-secondary text-end" data-label="Users">{{ voucher.shared_users or '1' }}</td>
+                            <td class="mobile-secondary text-end" data-label="Online">{{ voucher.online_users or 0 }}</td>
                             <td data-label="Status"><span class="status-pill status-{{ voucher.status or 'unused' }}">{{ (voucher.status or 'unused')|title }}</span></td>
                             <td class="mobile-secondary" data-label="Activated">{{ voucher.activated_at or '-' }}</td>
                             <td class="mobile-secondary" data-label="Time Used">{{ voucher.uptime_used or '-' }}</td>
@@ -179,7 +209,7 @@
                             <td class="mobile-secondary" data-label="Data Used">{{ voucher.data_used|data_size if voucher.data_used else '-' }}</td>
                             <td class="mobile-secondary" data-label="Data Left">{{ voucher|data_remaining }}</td>
                             <td data-label="Expiry">{{ voucher.expiry_date or '-' }}</td>
-                            <td class="actions-cell" data-label="Actions">
+                            <td class="actions-cell sticky-col sticky-col-right" data-label="Actions">
                                 <details class="voucher-action-menu">
                                     <summary class="voucher-menu-trigger" aria-label="Actions for voucher {{ voucher.username }}" title="Voucher actions">&#8942;</summary>
                                     <div class="voucher-action-list">
@@ -240,6 +270,24 @@
     </div>
 </nav>
 
+<style>
+    /* --- Table readability & sticky-column additions --- */
+    .voucher-table-wrap { overflow-x: auto; }
+    .voucher-table thead th { position: sticky; top: 0; background: var(--surface, #fff); z-index: 2; }
+    .voucher-table tbody tr:nth-child(odd) { background: rgba(0,0,0,0.015); }
+    .voucher-table tbody tr:hover { background: rgba(13,110,253,0.06); }
+    .voucher-table .sticky-col { position: sticky; left: 0; background: inherit; z-index: 1; }
+    .voucher-table .sticky-col-right { left: auto; right: 0; }
+    .voucher-table thead th.sticky-col { background: var(--surface, #fff); z-index: 3; }
+    .voucher-table .text-end { text-align: right; }
+    .voucher-inline-copy { border: none; background: none; cursor: pointer; padding: 0 2px; margin-left: 4px; opacity: 0.6; }
+    .voucher-inline-copy:hover { opacity: 1; }
+    .status-row-expired td, .status-row-disabled td { opacity: 0.65; }
+    .voucher-bulk-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; margin-bottom: 12px; border-radius: 8px; background: #eef4ff; border: 1px solid #cfe0ff; }
+    .voucher-bulk-actions { display: flex; gap: 8px; align-items: center; }
+    .voucher-bulk-actions form { display: inline; }
+</style>
+
 <script>
     (function () {
         var filterForm = document.getElementById('voucher-filter-form');
@@ -252,6 +300,10 @@
         var selectAll = document.getElementById('select-all-vouchers');
         var checkboxes = Array.prototype.slice.call(document.querySelectorAll('.voucher-select'));
         var exportLinks = Array.prototype.slice.call(document.querySelectorAll('.export-link'));
+        var bulkBar = document.getElementById('voucher-bulk-bar');
+        var bulkCount = document.getElementById('voucher-bulk-count');
+        var bulkClear = document.getElementById('voucher-bulk-clear');
+        var bulkIdFields = Array.prototype.slice.call(document.querySelectorAll('.voucher-bulk-ids'));
         var searchTimer;
 
         function showLoading() {
@@ -308,11 +360,36 @@
             link.addEventListener('click', showLoading);
         });
 
+        function updateBulkBar() {
+            var selected = checkboxes.filter(function (checkbox) { return checkbox.checked; });
+            if (!bulkBar) return;
+            bulkBar.hidden = selected.length === 0;
+            if (bulkCount) bulkCount.textContent = selected.length;
+            var ids = selected.map(function (checkbox) { return checkbox.value; }).join(',');
+            bulkIdFields.forEach(function (field) { field.value = ids; });
+            if (selectAll) {
+                selectAll.checked = selected.length === checkboxes.length && checkboxes.length > 0;
+                selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
+            }
+        }
+
         if (selectAll) {
             selectAll.addEventListener('change', function () {
                 checkboxes.forEach(function (checkbox) {
                     checkbox.checked = selectAll.checked;
                 });
+                updateBulkBar();
+            });
+        }
+
+        checkboxes.forEach(function (checkbox) {
+            checkbox.addEventListener('change', updateBulkBar);
+        });
+
+        if (bulkClear) {
+            bulkClear.addEventListener('click', function () {
+                checkboxes.forEach(function (checkbox) { checkbox.checked = false; });
+                updateBulkBar();
             });
         }
 
@@ -371,6 +448,8 @@
                 });
             }
         });
+
+        updateBulkBar();
     })();
 </script>
 {% endblock %}
